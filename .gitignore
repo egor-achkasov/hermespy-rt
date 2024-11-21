@@ -1,0 +1,6 @@
+test
+scenes
+.vscode
+build
+dist
+*.egg-info
