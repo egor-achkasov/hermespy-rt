@@ -44,17 +44,14 @@ typedef struct {
 
 /* ==== VECTOR OPERATIONS ==== */
 
-__attribute__ ((fastcall))
 Vec3 vec3_sub(const Vec3 *a, const Vec3 *b)
 {
     return (Vec3){a->x - b->x, a->y - b->y, a->z - b->z};
 }
-__attribute__ ((fastcall))
 Vec3 vec3_add(const Vec3 *a, const Vec3 *b)
 {
     return (Vec3){a->x + b->x, a->y + b->y, a->z + b->z};
 }
-__attribute__ ((fastcall))
 Vec3 vec3_cross(const Vec3 *a, const Vec3 *b)
 {
     return (Vec3){
@@ -63,12 +60,10 @@ Vec3 vec3_cross(const Vec3 *a, const Vec3 *b)
         a->x * b->y - a->y * b->x
     };
 }
-__attribute__ ((fastcall))
 float vec3_dot(const Vec3 *a, const Vec3 *b)
 {
     return a->x * b->x + a->y * b->y + a->z * b->z;
 }
-__attribute__ ((fastcall))
 Vec3 vec3_scale(const Vec3 *a, float s)
 {
     return (Vec3){a->x * s, a->y * s, a->z * s};
@@ -177,7 +172,7 @@ Mesh* load_mesh_ply(const char *mesh_filepath)
     /* INDICES */
     /* also calculate normals */
     uint8_t n;
-    Vec3 v1, v2, v3, u, v;
+    Vec3 *v1, *v2, *v3, u, v;
     for (size_t i = 0; i < mesh->num_indices; i += 3) {
         fread(&n, 1, 1, f);
         if (n != 3) {
@@ -186,11 +181,11 @@ Mesh* load_mesh_ply(const char *mesh_filepath)
         }
         fread(&mesh->indices[i], sizeof(int32_t), 3, f);
         /* calculate normal */
-        v1 = mesh->vertices[mesh->indices[i]];
-        v2 = mesh->vertices[mesh->indices[i + 1]];
-        v3 = mesh->vertices[mesh->indices[i + 2]];
-        u = vec3_sub(&v2, &v1);
-        v = vec3_sub(&v3, &v1);
+        v1 = &mesh->vertices[mesh->indices[i]];
+        v2 = &mesh->vertices[mesh->indices[i + 1]];
+        v3 = &mesh->vertices[mesh->indices[i + 2]];
+        u = vec3_sub(v2, v1);
+        v = vec3_sub(v3, v1);
         mesh->normals[i / 3] = vec3_cross(&u, &v);
     }
 
