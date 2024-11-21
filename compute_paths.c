@@ -43,31 +43,35 @@ typedef struct {
 } Scene;
 
 /* ==== VECTOR OPERATIONS ==== */
-/* TODO fastcalls */
 
-Vec3 vec3_sub(Vec3 a, Vec3 b)
+__attribute__ ((fastcall))
+Vec3 vec3_sub(const Vec3 *a, const Vec3 *b)
 {
-    return (Vec3){a.x - b.x, a.y - b.y, a.z - b.z};
+    return (Vec3){a->x - b->x, a->y - b->y, a->z - b->z};
 }
-Vec3 vec3_add(Vec3 a, Vec3 b)
+__attribute__ ((fastcall))
+Vec3 vec3_add(const Vec3 *a, const Vec3 *b)
 {
-    return (Vec3){a.x + b.x, a.y + b.y, a.z + b.z};
+    return (Vec3){a->x + b->x, a->y + b->y, a->z + b->z};
 }
-Vec3 vec3_cross(Vec3 a, Vec3 b)
+__attribute__ ((fastcall))
+Vec3 vec3_cross(const Vec3 *a, const Vec3 *b)
 {
     return (Vec3){
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x
+        a->y * b->z - a->z * b->y,
+        a->z * b->x - a->x * b->z,
+        a->x * b->y - a->y * b->x
     };
 }
-float vec3_dot(Vec3 a, Vec3 b)
+__attribute__ ((fastcall))
+float vec3_dot(const Vec3 *a, const Vec3 *b)
 {
-    return a.x * b.x + a.y * b.y + a.z * b.z;
+    return a->x * b->x + a->y * b->y + a->z * b->z;
 }
-Vec3 vec3_scale(Vec3 a, float s)
+__attribute__ ((fastcall))
+Vec3 vec3_scale(const Vec3 *a, float s)
 {
-    return (Vec3){a.x * s, a.y * s, a.z * s};
+    return (Vec3){a->x * s, a->y * s, a->z * s};
 }
 
 /* ==== MESH LOADING ==== */
@@ -185,9 +189,9 @@ Mesh* load_mesh_ply(const char *mesh_filepath)
         v1 = mesh->vertices[mesh->indices[i]];
         v2 = mesh->vertices[mesh->indices[i + 1]];
         v3 = mesh->vertices[mesh->indices[i + 2]];
-        u = vec3_sub(v2, v1);
-        v = vec3_sub(v3, v1);
-        mesh->normals[i / 3] = vec3_cross(u, v);
+        u = vec3_sub(&v2, &v1);
+        v = vec3_sub(&v3, &v1);
+        mesh->normals[i / 3] = vec3_cross(&u, &v);
     }
 
     fclose(f);
@@ -327,22 +331,22 @@ void moeller_trumbore(Ray *ray, Mesh *mesh, float *t, size_t *ind)
         v1 = mesh->vertices[mesh->indices[i]];
         v2 = mesh->vertices[mesh->indices[i + 1]];
         v3 = mesh->vertices[mesh->indices[i + 2]];
-        e1 = vec3_sub(v2, v1);
-        e2 = vec3_sub(v3, v1);
-        re2_cross = vec3_cross(ray->d, e2);
-        d = vec3_dot(e1, re2_cross);
+        e1 = vec3_sub(&v2, &v1);
+        e2 = vec3_sub(&v3, &v1);
+        re2_cross = vec3_cross(&ray->d, &e2);
+        d = vec3_dot(&e1, &re2_cross);
         if (d > -EPS && d < EPS) continue;
-        s = vec3_sub(ray->o, v1);
-        u = vec3_dot(s, re2_cross) / d;
+        s = vec3_sub(&ray->o, &v1);
+        u = vec3_dot(&s, &re2_cross) / d;
         if ((u < 0. && fabs(u) > EPS)
         || (u > 1. && fabs(u - 1.) > EPS))
             continue;
-        se1_cross = vec3_cross(s, e1);
-        v = vec3_dot(ray->d, se1_cross) / d;
+        se1_cross = vec3_cross(&s, &e1);
+        v = vec3_dot(&ray->d, &se1_cross) / d;
         if ((v < 0. && fabs(v) > EPS)
         || (u + v > 1. && fabs(u + v - 1.) > EPS))
             continue;
-        dist_tmp = vec3_dot(e2, se1_cross) / d;
+        dist_tmp = vec3_dot(&e2, &se1_cross) / d;
         if (dist_tmp > EPS && dist_tmp < dist) {
             dist = dist_tmp;
             *t = dist;
@@ -417,8 +421,8 @@ void compute_paths(
                     t = -1.;
                     ind = -1;
                     moeller_trumbore(&rays[j][k], scene.meshes[l], &t, &ind);
-                    hits[i][j][k] = vec3_scale(rays[j][k].d, t);
-                    hits[i][j][k] = vec3_add(hits[i][j][k], rays[j][k].o);
+                    hits[i][j][k] = vec3_scale(&rays[j][k].d, t);
+                    hits[i][j][k] = vec3_add(&hits[i][j][k], &rays[j][k].o);
                     rays[j][k].o = hits[i][j][k];
                     hit_indices[i][j][k] = ind;
                 }
