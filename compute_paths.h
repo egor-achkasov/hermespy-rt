@@ -3,7 +3,8 @@
 
 #include <stdint.h>  /* for int32_t */
 
-#include "common.h"
+#define IN
+#define OUT
 
 /** Compute gains and delays between in a Mitsuba scene.
  * 
