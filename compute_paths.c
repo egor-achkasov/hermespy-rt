@@ -22,16 +22,24 @@ typedef struct {
 } Ray;
 
 typedef struct {
+    char *name;
+    Vec3 reflectance;
+} Material;
+
+typedef struct {
     Vec3 *vertices;
     size_t num_vertices;
     int32_t *indices;
     size_t num_indices;
     Vec3 *normals;
+    Material *material;
 } Mesh;
 
 typedef struct {
     Mesh *meshes[256]; /* TODO: dynamic allocation, fix possible overflow */
     size_t num_meshes;
+    Material *materials[256]; /* TODO: dynamic allocation, fix possible overflow */
+    size_t num_materials;
 } Scene;
 
 /* ==== VECTOR OPERATIONS ==== */
@@ -63,6 +71,53 @@ Vec3 vec3_scale(Vec3 a, float s)
 }
 
 /* ==== MESH LOADING ==== */
+
+/** Parse a Mitsuba XML "bsdf" node with a diffuse material.
+ * Extracts "rgb" property with "reflectance" name.
+ * 
+ * \param node the xml node
+ * \param scene the scene to populate. Parsed material will be added to scene->materials.
+ */
+void parse_xmlnode_bsdf(IN xmlNodePtr node, OUT Scene *scene)
+{
+    char *material_name;
+    xmlChar *prop;
+    xmlNodePtr child, grandchild;
+
+    /* <bsdf type="diffuse" name="bsdf"> */
+    child = node->children;
+    while (child && child->type != XML_ELEMENT_NODE)
+        child = child->next;
+    if (!child) return;
+    if (xmlStrcmp(child->name, (const xmlChar *)"bsdf")
+    || xmlStrcmp(xmlGetProp(child, (const xmlChar *)"type"), (const xmlChar *)"diffuse"))
+        return;
+
+    /* <rgb value="0.603827 0.090842 0.049707" name="reflectance"/> */
+    grandchild = child->children;
+    while (grandchild && grandchild->type != XML_ELEMENT_NODE)
+        grandchild = grandchild->next;
+    if (!grandchild) return;
+    if (xmlStrcmp(grandchild->name, (const xmlChar *)"rgb")
+    || xmlStrcmp(xmlGetProp(grandchild, (const xmlChar *)"name"), (const xmlChar *)"reflectance"))
+        return;
+    prop = xmlGetProp(grandchild, (const xmlChar *)"value");
+    if (!prop) return;
+
+    /* Get the material name from the original node */
+    material_name = (char*)xmlGetProp(node, (const xmlChar *)"id");
+    if (!material_name) return;
+
+    /* Create the material object */
+    scene->materials[scene->num_materials] = (Material*)malloc(sizeof(Material));
+    scene->materials[scene->num_materials]->name = material_name;
+    sscanf((char*)prop, "%f %f %f",
+        &scene->materials[scene->num_materials]->reflectance.x,
+        &scene->materials[scene->num_materials]->reflectance.y,
+        &scene->materials[scene->num_materials]->reflectance.z);    
+    xmlFree(prop);
+    ++scene->num_materials;
+}
 
 /** Load a mesh from a PLY file.
  * 
@@ -139,6 +194,74 @@ Mesh* load_mesh_ply(const char *mesh_filepath)
     return mesh;
 }
 
+/** Parse a Mitsuba XML "shape" node with a mesh.
+ * Assumes all the materials are already loaded in the scene.
+ * 
+ * \param node the xml node
+ * \param dir the directory of the scene file
+ * \param scene_filepath the path to the scene file
+ * \param scene the scene to populate. Parsed mesh will be added to scene->meshes.
+ * \param material_name the name of the material
+ */
+void parse_xmlnode_shape(
+    IN xmlNodePtr node,
+    IN char* dir,
+    IN const char *scene_filepath,
+    OUT Scene *scene)
+{
+    xmlChar *prop;
+    xmlNodePtr child;
+    char *mesh_filepath = NULL;
+    char *material_name = NULL;
+
+    prop = xmlGetProp(node, (const xmlChar *)"type");
+    if (!prop || xmlStrcmp(prop, (const xmlChar *)"ply")) {
+        xmlFree(prop);
+        return NULL;
+    }
+    xmlFree(prop);
+    /* <shape type="ply" id="... found, now get the mesh */
+    for (child = node->children;
+        child && !(material_name && mesh_filepath);
+        child = child->next)
+    {
+        if (child->type != XML_ELEMENT_NODE)
+            continue;
+        /* get material name */
+        if (!xmlStrcmp(child->name, (const xmlChar *)"ref")) {
+            material_name = (char*)xmlGetProp(child, (const xmlChar *)"id");
+            continue;
+        }
+        /* get mesh filepath */
+        if (xmlStrcmp(child->name, (const xmlChar *)"string"))
+            continue;
+        prop = xmlGetProp(child, (const xmlChar *)"name");
+        if (!prop || xmlStrcmp(prop, (const xmlChar *)"filename"))
+            continue;
+        xmlFree(prop);
+        prop = xmlGetProp(child, (const xmlChar *)"value");
+        if (!prop) continue;
+        mesh_filepath = (char*)malloc(strlen(dir) + xmlStrlen(prop) + 2);
+        sprintf(mesh_filepath, "%s/%s", dir, prop);
+    }
+    if (!mesh_filepath || !material_name) return;
+
+    /* load the mesh */
+    scene->meshes[scene->num_meshes] = load_mesh_ply(mesh_filepath);
+    free(mesh_filepath);
+    xmlFree(prop);
+
+    /* Find the material */
+    for (size_t i = 0; i < scene->num_materials; ++i)
+        if (!strcmp(scene->materials[i]->name, material_name))
+            scene->meshes[scene->num_meshes]->material = scene->materials[i];
+    if (!scene->meshes[scene->num_meshes]->material) {
+        fprintf(stderr, "Material %s not found\n", material_name);
+        exit(8);
+    }
+    ++scene->num_meshes;
+}
+
 /** Load a scene from a Mitsuba XML file.
  * 
  * \param scene_filepath path to the Mitsuba XML file
@@ -146,51 +269,38 @@ Mesh* load_mesh_ply(const char *mesh_filepath)
  */
 Scene load_scene(const char *scene_filepath)
 {
-    Scene scene;
+    Scene scene = {0};
+    xmlNodePtr root;
+    xmlNodePtr cur = NULL;
     scene.num_meshes = 0;
 
-    /* Parse xml file */
-    xmlDocPtr doc = xmlReadFile(scene_filepath, NULL, 0);
+    /* Open the xml file */
+    xmlDocPtr doc = xmlReadFile(scene_filepath, NULL, XML_PARSE_NOBLANKS);
     if (!doc) {
         fprintf(stderr, "Could not parse file %s\n", scene_filepath);
         exit(8);
     }
-    xmlNodePtr root = xmlDocGetRootElement(doc);
-    xmlNodePtr cur = NULL;
-    xmlNodePtr child = NULL;
-    xmlChar *prop;
-    char* dir = dirname((char*)scene_filepath);
-    char *mesh_filepath;
+    root = xmlDocGetRootElement(doc);
+    if (!root) {
+        fprintf(stderr, "Could not get root element of %s\n", scene_filepath);
+        exit(8);
+    }
+
+    /* Get materials */
     for (cur = root->children; cur; cur = cur->next) {
-        if (cur->type != XML_ELEMENT_NODE
-        || xmlStrcmp(cur->name, (const xmlChar *)"shape"))
+        if (cur->type != XML_ELEMENT_NODE)
             continue;
-        prop = xmlGetProp(cur, (const xmlChar *)"type");
-        if (!prop || xmlStrcmp(prop, (const xmlChar *)"ply")) {
-            xmlFree(prop);
+        if (!xmlStrcmp(cur->name, (const xmlChar *)"bsdf"))
+            parse_xmlnode_bsdf(cur, &scene);
+    }
+
+    /* Get shapes */
+    char* dir = dirname((char*)scene_filepath);
+    for (cur = root->children; cur; cur = cur->next) {
+        if (cur->type != XML_ELEMENT_NODE)
             continue;
-        }
-        xmlFree(prop);
-        /* <shape type="ply" id="... found, now get the mesh */
-        for (child = cur->children; child; child = child->next) {
-            if (child->type != XML_ELEMENT_NODE
-            || xmlStrcmp(child->name, (const xmlChar *)"string"))
-                continue;
-            prop = xmlGetProp(child, (const xmlChar *)"name");
-            if (!prop || xmlStrcmp(prop, (const xmlChar *)"filename"))
-                continue;
-            xmlFree(prop);
-            prop = xmlGetProp(child, (const xmlChar *)"value");
-            if (!prop) continue;
-            /* get the mesh filepath */
-            mesh_filepath = (char*)malloc(strlen(dir) + xmlStrlen(prop) + 2);
-            sprintf(mesh_filepath, "%s/%s", dir, prop);
-            /* load the mesh */
-            scene.meshes[scene.num_meshes] = load_mesh_ply(mesh_filepath);
-            ++scene.num_meshes;
-            free(mesh_filepath);
-            xmlFree(prop);
-        }
+        if (!xmlStrcmp(cur->name, (const xmlChar *)"shape"))
+            parse_xmlnode_shape(cur, dir, scene_filepath, &scene);
     }
 
     return scene;
