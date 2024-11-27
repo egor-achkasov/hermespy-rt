@@ -13,7 +13,7 @@
  * under meshes/ directory in .ply files in PLY format.
  * Meshes filenames must be the same as the name of the object in the .xml file.
  * 
- * \param scene_filepath path to a Mitsuba scene .xml file
+ * \param mesh_filepath path to a mesh .ply file
  * \param rx_positions receiver positions, shape (num_rx, 3)
  * \param tx_positions transmitter positions, shape (num_tx, 3)
  * \param rx_velocities receiver velocities, shape (num_rx, 3)
@@ -26,7 +26,7 @@
  * \param tau output array of delays, shape (num_paths,)
 */
 void compute_paths(
-    IN const char *scene_filepath, /* path to the scene file */
+    IN const char *mesh_filepath, /* path to the mesh file */
     IN const float *rx_positions,  /* shape (num_rx, 3) */
     IN const float *tx_positions,  /* shape (num_tx, 3) */
     IN const float *rx_velocities, /* shape (num_rx, 3) */

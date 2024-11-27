@@ -6,7 +6,7 @@
 
 // Wrapper function for Python to call compute_paths
 static PyObject* py_compute_paths(PyObject* self, PyObject* args) {
-    const char* scene_filepath;
+    const char* mesh_filepath;
     PyObject* rx_positions_obj;
     PyObject* tx_positions_obj;
     PyObject* rx_velocities_obj;
@@ -15,7 +15,7 @@ static PyObject* py_compute_paths(PyObject* self, PyObject* args) {
     int num_rx, num_tx, num_paths, num_bounces;
     
     if (!PyArg_ParseTuple(args, "sO&O&O&O&fiiii",
-                          &scene_filepath,
+                          &mesh_filepath,
                           &rx_positions_obj,
                           &tx_positions_obj,
                           &rx_velocities_obj,
@@ -48,7 +48,7 @@ static PyObject* py_compute_paths(PyObject* self, PyObject* args) {
     }
 
     // Call the C compute_paths function
-    compute_paths(scene_filepath, 
+    compute_paths(mesh_filepath, 
                   rx_positions, tx_positions, 
                   rx_velocities, tx_velocities, 
                   carrier_frequency,

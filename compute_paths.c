@@ -1,8 +1,5 @@
 #include "compute_paths.h"
 
-#include <libxml/parser.h>
-#include <libxml/tree.h>
-
 #include <stddef.h> /* for size_t */
 #include <stdlib.h> /* for exit, malloc, free */
 #include <libgen.h> /* for dirname */
@@ -22,25 +19,19 @@ typedef struct {
 } Ray;
 
 typedef struct {
-    char *name;
-    Vec3 reflectance;
-} Material;
+    float a, b, c, d;
+} RadioMaterial;
 
 typedef struct {
     Vec3 *vertices;
     size_t num_vertices;
+    RadioMaterial *rms;
+    size_t num_rms;
     int32_t *indices;
+    int32_t *rm_indices;
     size_t num_indices;
     Vec3 *normals;
-    Material *material;
 } Mesh;
-
-typedef struct {
-    Mesh *meshes[256]; /* TODO: dynamic allocation, fix possible overflow */
-    size_t num_meshes;
-    Material *materials[256]; /* TODO: dynamic allocation, fix possible overflow */
-    size_t num_materials;
-} Scene;
 
 /* ==== VECTOR OPERATIONS ==== */
 
@@ -71,67 +62,31 @@ Vec3 vec3_scale(const Vec3 *a, float s)
 
 /* ==== MESH LOADING ==== */
 
-/** Parse a Mitsuba XML "bsdf" node with a diffuse material.
- * Extracts "rgb" property with "reflectance" name.
- * 
- * \param node the xml node
- * \param scene the scene to populate. Parsed material will be added to scene->materials.
- */
-void parse_xmlnode_bsdf(IN xmlNodePtr node, OUT Scene *scene)
-{
-    char *material_name;
-    xmlChar *prop;
-    xmlNodePtr child, grandchild;
-
-    /* <bsdf type="diffuse" name="bsdf"> */
-    child = node->children;
-    while (child && child->type != XML_ELEMENT_NODE)
-        child = child->next;
-    if (!child) return;
-    if (xmlStrcmp(child->name, (const xmlChar *)"bsdf")
-    || xmlStrcmp(xmlGetProp(child, (const xmlChar *)"type"), (const xmlChar *)"diffuse"))
-        return;
-
-    /* <rgb value="0.603827 0.090842 0.049707" name="reflectance"/> */
-    grandchild = child->children;
-    while (grandchild && grandchild->type != XML_ELEMENT_NODE)
-        grandchild = grandchild->next;
-    if (!grandchild) return;
-    if (xmlStrcmp(grandchild->name, (const xmlChar *)"rgb")
-    || xmlStrcmp(xmlGetProp(grandchild, (const xmlChar *)"name"), (const xmlChar *)"reflectance"))
-        return;
-    prop = xmlGetProp(grandchild, (const xmlChar *)"value");
-    if (!prop) return;
-
-    /* Get the material name from the original node */
-    material_name = (char*)xmlGetProp(node, (const xmlChar *)"id");
-    if (!material_name) return;
-
-    /* Create the material object */
-    scene->materials[scene->num_materials] = (Material*)malloc(sizeof(Material));
-    scene->materials[scene->num_materials]->name = material_name;
-    sscanf((char*)prop, "%f %f %f",
-        &scene->materials[scene->num_materials]->reflectance.x,
-        &scene->materials[scene->num_materials]->reflectance.y,
-        &scene->materials[scene->num_materials]->reflectance.z);    
-    xmlFree(prop);
-    ++scene->num_materials;
-}
-
 /** Load a mesh from a PLY file.
  * 
- * Supports only format binary_little_endian 1.0.
+ * ply
+ * format binary_little_endian 1.0
+ * element vertex %d\n", num_vertices);
+ * property float x
+ * property float y
+ * property float z
+ * element radio_material %d\n", num_materials);
+ * property list uint char name
+ * property float a
+ * property float b
+ * property float c
+ * property float d
+ * element face %d\n", num_faces);
+ * property list uchar uint vertex_index
+ * property uint material_index
+ * end_header
  * 
- * All faces must be triangles, meaning
- * indices set as "property list uchar int"
- * with each uchar being 3.
- * 
- * Vertices must contain float x, y, z, u and v coordinates.
+ * All the faces must be triangles.
  * 
  * \param mesh_filepath path to the PLY file
  * \return the loaded mesh
  */
-Mesh* load_mesh_ply(const char *mesh_filepath)
+Mesh load_mesh_ply(const char *mesh_filepath)
 {
     FILE *f = fopen(mesh_filepath, "rb");
     if (!f) {
@@ -139,7 +94,10 @@ Mesh* load_mesh_ply(const char *mesh_filepath)
         exit(8);
     }
 
-    char buff[256];
+    char buff[128];
+    size_t num_vertices = 0;
+    size_t num_faces = 0;
+    size_t num_materials = 0;
 
     /* HEADER */
     /* ply */
@@ -149,160 +107,95 @@ Mesh* load_mesh_ply(const char *mesh_filepath)
     fread(buff, 1, 32, f);
     if (strncmp(buff, "format binary_little_endian 1.0\n", 32)) exit(8);
 
-    Mesh *mesh = (Mesh*)malloc(sizeof(Mesh));
-    while (fgets(buff, sizeof(buff), f)) {
-        if (strncmp(buff, "element vertex", 14) == 0)
-            sscanf(buff, "element vertex %zu", &mesh->num_vertices);
-        else if (strncmp(buff, "element face", 12) == 0)
-            sscanf(buff, "element face %zu", &mesh->num_indices);
-        else if (strncmp(buff, "end_header", 10) == 0)
-            break;
-    }
-    mesh->num_indices *= 3;
-    mesh->vertices = (Vec3*)malloc(mesh->num_vertices * sizeof(Vec3));
-    mesh->indices = (int32_t*)malloc(mesh->num_indices * sizeof(int32_t));
-    mesh->normals = (Vec3*)malloc(mesh->num_indices / 3 * sizeof(Vec3));
+    /* element vertex <num_vertices> */
+    fgets(buff, 128, f);
+    if (strncmp(buff, "element vertex ", 15)) exit(8);
+    sscanf(buff, "element vertex %zu", &num_vertices);
+    /* property float x */
+    /* property float y */
+    /* property float z */
+    fread(buff, 1, 17*3, f);
+    if (strncmp(buff, "property float x\nproperty float y\nproperty float z\n", 17*3))
+        exit(8);
+
+    /* element radio_material */
+    fgets(buff, 128, f);
+    if (strncmp(buff, "element radio_material ", 23)) exit(8);
+    sscanf(buff, "element radio_material %zu", &num_materials);
+    /* property list uint char name */
+    fread(buff, 1, 29, f);
+    if (strncmp(buff, "property list uint char name\n", 29)) exit(8);
+    /* property float a */
+    /* property float b */
+    /* property float c */
+    /* property float d */
+    fread(buff, 1, 17*4, f);
+    if (strncmp(buff, "property float a\nproperty float b\nproperty float c\nproperty float d\n", 17*4))
+        exit(8);
+
+    /* element face <num_faces> */
+    fgets(buff, 128, f);
+    if (strncmp(buff, "element face ", 13)) exit(8);
+    sscanf(buff, "element face %zu", &num_faces);
+    /* property list uchar int vertex_index */
+    fread(buff, 1, 38, f);
+    if (strncmp(buff, "property list uchar uint vertex_index\n", 38))
+        exit(8);
+    /* property uint material_index */
+    fread(buff, 1, 29, f);
+    if (strncmp(buff, "property uint material_index\n", 29)) exit(8);
+
+    /* end_header */
+    fread(buff, 1, 11, f);
+    if (strncmp(buff, "end_header\n", 11)) exit(8);
+
+    /* Init mesh */
+    Mesh mesh;
+    mesh.num_vertices = num_vertices;
+    mesh.num_rms = num_materials;
+    mesh.num_indices = num_faces * 3;
+    mesh.vertices = (Vec3*)malloc(num_vertices * sizeof(Vec3));
+    mesh.rms = (RadioMaterial*)malloc(num_materials * sizeof(RadioMaterial));
+    mesh.indices = (int32_t*)malloc(mesh.num_indices * sizeof(int32_t));
+    mesh.rm_indices = (int32_t*)malloc(num_faces * sizeof(int32_t));
+    mesh.normals = (Vec3*)malloc(num_faces * sizeof(Vec3));
 
     /* VERTICES */
-    for (size_t i = 0; i < mesh->num_vertices; ++i) {
-        fread(&mesh->vertices[i], sizeof(Vec3), 1, f);
-        fseek(f, 8, SEEK_CUR); /* skip u and v */
+    for (size_t i = 0; i < mesh.num_vertices; ++i)
+        fread(&mesh.vertices[i], sizeof(Vec3), 1, f);
+
+    /* RADIO_MATERIALS */
+    unsigned int name_size;
+    for (size_t i = 0; i < num_materials; ++i) {
+        /* skip name */
+        fread(&name_size, sizeof(unsigned int), 1, f);
+        fseek(f, name_size, SEEK_CUR);
+        fread(&mesh.rms[i], sizeof(RadioMaterial), 1, f);
     }
 
     /* INDICES */
     /* also calculate normals */
     uint8_t n;
     Vec3 *v1, *v2, *v3, u, v;
-    for (size_t i = 0; i < mesh->num_indices; i += 3) {
+    for (size_t i = 0; i < mesh.num_indices; i += 3) {
         fread(&n, 1, 1, f);
         if (n != 3) {
             fprintf(stderr, "Only trianglar faces are supported\n");
             exit(8);
         }
-        fread(&mesh->indices[i], sizeof(int32_t), 3, f);
+        fread(&mesh.indices[i], sizeof(int32_t), 3, f);
+        fread(&mesh.rm_indices[i / 3], sizeof(int32_t), 1, f);
         /* calculate normal */
-        v1 = &mesh->vertices[mesh->indices[i]];
-        v2 = &mesh->vertices[mesh->indices[i + 1]];
-        v3 = &mesh->vertices[mesh->indices[i + 2]];
+        v1 = &mesh.vertices[mesh.indices[i]];
+        v2 = &mesh.vertices[mesh.indices[i + 1]];
+        v3 = &mesh.vertices[mesh.indices[i + 2]];
         u = vec3_sub(v2, v1);
         v = vec3_sub(v3, v1);
-        mesh->normals[i / 3] = vec3_cross(&u, &v);
+        mesh.normals[i / 3] = vec3_cross(&u, &v);
     }
 
     fclose(f);
     return mesh;
-}
-
-/** Parse a Mitsuba XML "shape" node with a mesh.
- * Assumes all the materials are already loaded in the scene.
- * 
- * \param node the xml node
- * \param dir the directory of the scene file
- * \param scene_filepath the path to the scene file
- * \param scene the scene to populate. Parsed mesh will be added to scene->meshes.
- * \param material_name the name of the material
- */
-void parse_xmlnode_shape(
-    IN xmlNodePtr node,
-    IN char* dir,
-    IN const char *scene_filepath,
-    OUT Scene *scene)
-{
-    xmlChar *prop;
-    xmlNodePtr child;
-    char *mesh_filepath = NULL;
-    char *material_name = NULL;
-
-    prop = xmlGetProp(node, (const xmlChar *)"type");
-    if (!prop || xmlStrcmp(prop, (const xmlChar *)"ply")) {
-        xmlFree(prop);
-        return NULL;
-    }
-    xmlFree(prop);
-    /* <shape type="ply" id="... found, now get the mesh */
-    for (child = node->children;
-        child && !(material_name && mesh_filepath);
-        child = child->next)
-    {
-        if (child->type != XML_ELEMENT_NODE)
-            continue;
-        /* get material name */
-        if (!xmlStrcmp(child->name, (const xmlChar *)"ref")) {
-            material_name = (char*)xmlGetProp(child, (const xmlChar *)"id");
-            continue;
-        }
-        /* get mesh filepath */
-        if (xmlStrcmp(child->name, (const xmlChar *)"string"))
-            continue;
-        prop = xmlGetProp(child, (const xmlChar *)"name");
-        if (!prop || xmlStrcmp(prop, (const xmlChar *)"filename"))
-            continue;
-        xmlFree(prop);
-        prop = xmlGetProp(child, (const xmlChar *)"value");
-        if (!prop) continue;
-        mesh_filepath = (char*)malloc(strlen(dir) + xmlStrlen(prop) + 2);
-        sprintf(mesh_filepath, "%s/%s", dir, prop);
-    }
-    if (!mesh_filepath || !material_name) return;
-
-    /* load the mesh */
-    scene->meshes[scene->num_meshes] = load_mesh_ply(mesh_filepath);
-    free(mesh_filepath);
-    xmlFree(prop);
-
-    /* Find the material */
-    for (size_t i = 0; i < scene->num_materials; ++i)
-        if (!strcmp(scene->materials[i]->name, material_name))
-            scene->meshes[scene->num_meshes]->material = scene->materials[i];
-    if (!scene->meshes[scene->num_meshes]->material) {
-        fprintf(stderr, "Material %s not found\n", material_name);
-        exit(8);
-    }
-    ++scene->num_meshes;
-}
-
-/** Load a scene from a Mitsuba XML file.
- * 
- * \param scene_filepath path to the Mitsuba XML file
- * \return the loaded mesh
- */
-Scene load_scene(const char *scene_filepath)
-{
-    Scene scene = {0};
-    xmlNodePtr root;
-    xmlNodePtr cur = NULL;
-    scene.num_meshes = 0;
-
-    /* Open the xml file */
-    xmlDocPtr doc = xmlReadFile(scene_filepath, NULL, XML_PARSE_NOBLANKS);
-    if (!doc) {
-        fprintf(stderr, "Could not parse file %s\n", scene_filepath);
-        exit(8);
-    }
-    root = xmlDocGetRootElement(doc);
-    if (!root) {
-        fprintf(stderr, "Could not get root element of %s\n", scene_filepath);
-        exit(8);
-    }
-
-    /* Get materials */
-    for (cur = root->children; cur; cur = cur->next) {
-        if (cur->type != XML_ELEMENT_NODE)
-            continue;
-        if (!xmlStrcmp(cur->name, (const xmlChar *)"bsdf"))
-            parse_xmlnode_bsdf(cur, &scene);
-    }
-
-    /* Get shapes */
-    char* dir = dirname((char*)scene_filepath);
-    for (cur = root->children; cur; cur = cur->next) {
-        if (cur->type != XML_ELEMENT_NODE)
-            continue;
-        if (!xmlStrcmp(cur->name, (const xmlChar *)"shape"))
-            parse_xmlnode_shape(cur, dir, scene_filepath, &scene);
-    }
-
-    return scene;
 }
 
 /* ==== RT ==== */
@@ -353,7 +246,7 @@ void moeller_trumbore(Ray *ray, Mesh *mesh, float *t, size_t *ind)
 /* ==== MAIN FUNCTION ==== */
 
 void compute_paths(
-    IN const char *scene_filepath, /* path to the scene file */
+    IN const char *mesh_filepath, /* path to the mesh file */
     IN const float *rx_positions,  /* shape (num_rx, 3) */
     IN const float *tx_positions,  /* shape (num_tx, 3) */
     IN const float *rx_velocities, /* shape (num_rx, 3) */
@@ -368,7 +261,7 @@ void compute_paths(
 )
 {
     /* Load the scene */
-    Scene scene = load_scene(scene_filepath);
+    Mesh mesh = load_mesh_ply(mesh_filepath);
 
     /* Calculate fibonacci sphere */
     Vec3 *ray_directions = (Vec3*)malloc(num_paths * sizeof(Vec3));
@@ -411,16 +304,15 @@ void compute_paths(
         for (size_t j = 0; j < num_tx; ++j) {
             hits[i][j] = (Vec3*)malloc(num_paths * sizeof(Vec3));
             hit_indices[i][j] = (size_t*)malloc(num_paths * sizeof(size_t));
-            for (size_t k = 0; k < num_paths; ++k)
-                for (size_t l = 0; l < scene.num_meshes; ++l) {
-                    t = -1.;
-                    ind = -1;
-                    moeller_trumbore(&rays[j][k], scene.meshes[l], &t, &ind);
-                    hits[i][j][k] = vec3_scale(&rays[j][k].d, t);
-                    hits[i][j][k] = vec3_add(&hits[i][j][k], &rays[j][k].o);
-                    rays[j][k].o = hits[i][j][k];
-                    hit_indices[i][j][k] = ind;
-                }
+            for (size_t k = 0; k < num_paths; ++k) {
+                t = -1.;
+                ind = -1;
+                moeller_trumbore(&rays[j][k], &mesh, &t, &ind);
+                hits[i][j][k] = vec3_scale(&rays[j][k].d, t);
+                hits[i][j][k] = vec3_add(&hits[i][j][k], &rays[j][k].o);
+                rays[j][k].o = hits[i][j][k];
+                hit_indices[i][j][k] = ind;
+            }
         }
     }
 
@@ -446,11 +338,10 @@ void compute_paths(
     for (size_t i = 0; i < num_tx; ++i)
         free(rays[i]);
     free(rays);
-    /* Free the scene */
-    for (size_t i = 0; i < scene.num_meshes; ++i) {
-        free(scene.meshes[i]->vertices);
-        free(scene.meshes[i]->indices);
-        free(scene.meshes[i]->normals);
-        free(scene.meshes[i]);
-    }
+    /* Free the mesh */
+    free(mesh.vertices);
+    free(mesh.rms);
+    free(mesh.indices);
+    free(mesh.rm_indices);
+    free(mesh.normals);
 }
