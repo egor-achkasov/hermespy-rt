@@ -257,7 +257,7 @@ void compute_paths(
     IN int num_paths,              /* number of paths */
     IN int num_bounces,            /* number of bounces */
     OUT float *a,                  /* output array of gains (num_paths,) */
-    OUT int32_t *tau               /* output array of delays (num_paths,) */
+    OUT float *tau               /* output array of delays (num_paths,) */
 )
 {
     /* Load the scene */

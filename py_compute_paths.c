@@ -40,7 +40,7 @@ static PyObject* py_compute_paths(PyObject* self, PyObject* args) {
 
     // Output arrays for gains and delays
     float* a = (float*)malloc(num_paths * sizeof(float));
-    int32_t* tau = (int32_t*)malloc(num_paths * sizeof(int32_t));
+    float* tau = (float*)malloc(num_paths * sizeof(float));
 
     if (!a || !tau) {
         PyErr_NoMemory();
