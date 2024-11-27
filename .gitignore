@@ -4,3 +4,5 @@ scenes
 build
 dist
 *.egg-info
+.gdb_history
+*.so
