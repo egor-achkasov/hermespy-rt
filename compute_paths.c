@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #define PI 3.14159265358979323846
+#define SPEED_OF_LIGHT 299792458.0
 #define EPS 1e-6
 
 typedef struct {
@@ -292,11 +293,15 @@ void compute_paths(
     }
     free(ray_directions);
 
-    /* Calculate the paths */
+    /* Calculate the paths:
+    - sum distances for each path into tau
+    - a???
+    */
     /* TODO calculate a and tau in moeller_trumbore */
     /* shape (num_bounces, num_tx, num_paths) */
     Vec3 *hits = (Vec3*)malloc(num_bounces * num_tx * num_paths * sizeof(Vec3));
     int32_t *hit_indices = (int32_t*)malloc(num_bounces * num_tx * num_paths * sizeof(int32_t));
+    tau = memset(tau, 0, num_paths * sizeof(float));
     float t;
     int32_t ind;
     Ray *r;
@@ -308,15 +313,17 @@ void compute_paths(
                 ind = -1;
                 r = &rays[j * num_paths + k];
                 moeller_trumbore(r, &mesh, &t, &ind);
+                tau[k] += t;
                 hit_indices[i * num_tx * num_paths + j * num_paths + k] = ind;
                 h = &hits[i * num_tx * num_paths + j * num_paths + k];
                 *h = vec3_scale(&r->d, t);
                 *h = vec3_add(h, &r->o);
                 r->o = *h;
             }
-    FILE *f = fopen("hits.bin", "wb");
-    fwrite(hits, sizeof(Vec3), num_bounces * num_tx * num_paths, f);
-    fclose(f);
+
+    /* Calculate tau */
+    for (size_t i = 0; i < num_paths; ++i)
+        tau[i] /= SPEED_OF_LIGHT;
 
     /* TODO Remove */
     for (size_t i = 0; i < num_bounces; ++i)
