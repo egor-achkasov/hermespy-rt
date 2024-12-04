@@ -9,14 +9,15 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    float rx_positions[3] = {0.0, 0.0, 0.0};
-    float tx_positions[3] = {0.0, 0.0, 0.0};
+    float rx_positions[3] = {0.0, 0.0, 2.5};
+    float tx_positions[3] = {0.0, 0.0, 2.5};
     float rx_velocities[3] = {0.0, 0.0, 0.0};
     float tx_velocities[3] = {0.0, 0.0, 0.0};
     float carrier_frequency = 2.4e9; /* 2.4 GHz */
-    int num_paths = 10000;
+    size_t num_paths = 10000;
+    size_t num_bounces = 3;
     float *a = NULL;
-    int32_t *tau = NULL;
+    float *tau = NULL;
     compute_paths(
         argv[1],
         rx_positions,
@@ -24,6 +25,6 @@ int main(int argc, char **argv)
         rx_velocities,
         tx_velocities,
         carrier_frequency,
-        1, 1, num_paths, 3,
+        1, 1, num_paths, num_bounces,
         a, tau);
 }
