@@ -300,7 +300,7 @@ void compute_paths(
     /* shape (num_bounces, num_tx, num_paths) */
     Vec3 *hits = (Vec3*)malloc(num_bounces * num_tx * num_paths * sizeof(Vec3));
     int32_t *hit_indices = (int32_t*)malloc(num_bounces * num_tx * num_paths * sizeof(int32_t));
-    tau = memset(tau, 0, num_paths * sizeof(float));
+    tau = (float*)memset(tau, 0, num_paths * sizeof(float));
     float t;
     int32_t ind;
     Ray *r;
