@@ -2,7 +2,6 @@
 
 #include <stddef.h> /* for size_t */
 #include <stdlib.h> /* for exit, malloc, free */
-#include <libgen.h> /* for dirname */
 #include <string.h> /* for strlen, sprintf */
 #include <stdio.h>  /* for fopen, FILE, fclose */
 #include <math.h>   /* for sin, cos, sqrt */
