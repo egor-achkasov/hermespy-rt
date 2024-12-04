@@ -1,14 +1,14 @@
 #ifndef COMPUTE_PATHS_H
 #define COMPUTE_PATHS_H
 
-#include <stdint.h>  /* for int32_t */
+#include <stddef.h> /* for size_t */
 
 #define IN
 #define OUT
 
 /** Compute gains and delays between in a Mitsuba scene.
  * 
- * Scene must be defined in a Mitsuba .xml JSON format.
+ * Scene must be defined in a specific PLY format. See README for details.
  * The meshes must be present in the same directory as the .xml file,
  * under meshes/ directory in .ply files in PLY format.
  * Meshes filenames must be the same as the name of the object in the .xml file.
@@ -32,10 +32,10 @@ void compute_paths(
     IN const float *rx_velocities, /* shape (num_rx, 3) */
     IN const float *tx_velocities, /* shape (num_tx, 3) */
     IN float carrier_frequency,    /* > 0.0 */
-    IN int num_rx,                 /* number of receivers */
-    IN int num_tx,                 /* number of transmitters */
-    IN int num_paths,              /* number of paths */
-    IN int num_bounces,            /* number of bounces */
+    IN size_t num_rx,                 /* number of receivers */
+    IN size_t num_tx,                 /* number of transmitters */
+    IN size_t num_paths,              /* number of paths */
+    IN size_t num_bounces,            /* number of bounces */
     OUT float *a,                  /* output array of gains (num_paths,) */
     OUT float *tau               /* output array of delays (num_paths,) */
 );
