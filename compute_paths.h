@@ -23,21 +23,21 @@
  * \param num_tx number of transmitters. Must be > 0
  * \param num_paths number of paths to compute. Must be > 0
  * \param a output array of gains, shape (num_paths,)
- * \param tau output array of delays, shape (num_paths,)
+ * \param tau output array of delays in seconds, shape (num_paths,)
 */
 void compute_paths(
-    IN const char *mesh_filepath, /* path to the mesh file */
+    IN const char *mesh_filepath,  /* path to the mesh file */
     IN const float *rx_positions,  /* shape (num_rx, 3) */
     IN const float *tx_positions,  /* shape (num_tx, 3) */
     IN const float *rx_velocities, /* shape (num_rx, 3) */
     IN const float *tx_velocities, /* shape (num_tx, 3) */
     IN float carrier_frequency,    /* > 0.0 */
-    IN size_t num_rx,                 /* number of receivers */
-    IN size_t num_tx,                 /* number of transmitters */
-    IN size_t num_paths,              /* number of paths */
-    IN size_t num_bounces,            /* number of bounces */
+    IN size_t num_rx,              /* number of receivers */
+    IN size_t num_tx,              /* number of transmitters */
+    IN size_t num_paths,           /* number of paths */
+    IN size_t num_bounces,         /* number of bounces */
     OUT float *a,                  /* output array of gains (num_paths,) */
-    OUT float *tau               /* output array of delays (num_paths,) */
+    OUT float *tau                 /* output array of delays in seconds (num_paths,) */
 );
 
 #endif  /* COMPUTE_PATHS_H */
