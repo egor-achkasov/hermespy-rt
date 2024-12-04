@@ -1,6 +1,7 @@
 #include "compute_paths.h"
 
 #include <stdio.h> /* for fprintf */
+#include <stdlib.h> /* for malloc */
 
 int main(int argc, char **argv)
 {
@@ -14,10 +15,12 @@ int main(int argc, char **argv)
     float rx_velocities[3] = {0.0, 0.0, 0.0};
     float tx_velocities[3] = {0.0, 0.0, 0.0};
     float carrier_frequency = 2.4e9; /* 2.4 GHz */
+    size_t num_rx = 1;
+    size_t num_tx = 1;
     size_t num_paths = 10000;
     size_t num_bounces = 3;
-    float *a = NULL;
-    float *tau = NULL;
+    float *a = (float*)malloc(num_bounces * num_tx * num_paths * 3 * sizeof(float));
+    float *tau = (float*)malloc(num_paths * sizeof(float));
     compute_paths(
         argv[1],
         rx_positions,
@@ -25,6 +28,6 @@ int main(int argc, char **argv)
         rx_velocities,
         tx_velocities,
         carrier_frequency,
-        1, 1, num_paths, num_bounces,
+        num_rx, num_tx, num_paths, num_bounces,
         a, tau);
 }
