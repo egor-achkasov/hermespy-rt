@@ -1,6 +1,13 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
+
+#ifdef _WIN32
+extern "C" {
+    #include "compute_paths.h"
+}
+#else
 #include "compute_paths.h"
+#endif
 
 namespace py = pybind11;
 
