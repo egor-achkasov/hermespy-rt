@@ -11,7 +11,7 @@ extern "C" {
 
 namespace py = pybind11;
 
-std::tuple< py::array_t<float>, py::array_t<float> >
+std::tuple< py::array_t<float>, py::array_t<float>, py::array_t<float> >
 compute_paths_wrapper(
     const std::string &mesh_filepath,
     py::array_t<float> rx_positions,
@@ -31,38 +31,41 @@ compute_paths_wrapper(
     py::buffer_info tx_vel_info = tx_velocities.request();
 
     // Output arrays
-    // float *a_im = new float[num_paths];
-    // float *a_re = new float[num_paths];
-    float *a = new float[num_bounces * num_tx * num_paths * 3];
-    float *tau = new float[num_paths];
+    float *a_im = new float[num_tx * num_paths];
+    float *a_re = new float[num_tx * num_paths];
+    float *tau = new float[num_tx * num_paths];
 
     // Call the C function
     compute_paths(
         mesh_filepath.c_str(),
-        (float*)rx_pos_info.ptr,  // Rx positions
-        (float*)tx_pos_info.ptr,  // Tx positions
-        (float*)rx_vel_info.ptr,  // Rx velocities
-        (float*)tx_vel_info.ptr,  // Tx velocities
+        (const float*)rx_pos_info.ptr,  // Rx positions
+        (const float*)tx_pos_info.ptr,  // Tx positions
+        (const float*)rx_vel_info.ptr,  // Rx velocities
+        (const float*)tx_vel_info.ptr,  // Tx velocities
         carrier_frequency,
         (size_t)num_rx,
         (size_t)num_tx,
         (size_t)num_paths,
         (size_t)num_bounces,
-        a,
+        a_re,
+        a_im,
         tau
     );
 
     // Convert output arrays into numpy arrays for easy use in Python
-    //py::array_t<float> a_array = py::array_t<float>(num_paths, a);
-    py::array_t<float> a_array = py::array_t<float>({num_bounces, num_tx, num_paths, 3}, a);
-    py::array_t<float> tau_array = py::array_t<float>(num_paths, tau);
+    // TODO prevent copying data
+    // TODO construct np.complex64 array for a
+    py::array_t<float> a_im_array = py::array_t<float>({num_tx, num_paths}, a_im);
+    py::array_t<float> a_re_array = py::array_t<float>({num_tx, num_paths}, a_re);
+    py::array_t<float> tau_array = py::array_t<float>({num_tx, num_paths}, tau);
 
     // Deallocate arrays
-    // delete[] a;
-    // delete[] tau;
+    delete[] a_im;
+    delete[] a_re;
+    delete[] tau;
 
     // Return the results as a tuple (gains, delays)
-    return std::make_tuple(a_array, tau_array);
+    return std::make_tuple(a_re_array, a_im_array, tau_array);
 }
 
 PYBIND11_MODULE(rt, m) {

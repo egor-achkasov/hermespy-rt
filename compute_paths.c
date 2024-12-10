@@ -248,18 +248,19 @@ void moeller_trumbore(Ray *ray, Mesh *mesh, float *t, int32_t *ind)
 /* ==== MAIN FUNCTION ==== */
 
 void compute_paths(
-    IN const char *mesh_filepath, /* path to the mesh file */
+    IN const char *mesh_filepath,  /* path to the mesh file */
     IN const float *rx_positions,  /* shape (num_rx, 3) */
     IN const float *tx_positions,  /* shape (num_tx, 3) */
     IN const float *rx_velocities, /* shape (num_rx, 3) */
     IN const float *tx_velocities, /* shape (num_tx, 3) */
     IN float carrier_frequency,    /* > 0.0 */
-    IN size_t num_rx,                 /* number of receivers */
-    IN size_t num_tx,                 /* number of transmitters */
-    IN size_t num_paths,              /* number of paths */
-    IN size_t num_bounces,            /* number of bounces */
-    OUT float *a,                  /* output array of gains (num_paths,) */
-    OUT float *tau               /* output array of delays (num_paths,) */
+    IN size_t num_rx,              /* number of receivers */
+    IN size_t num_tx,              /* number of transmitters */
+    IN size_t num_paths,           /* number of paths */
+    IN size_t num_bounces,         /* number of bounces */
+    OUT float *a_re,               /* output array real parts of gains (num_tx, num_paths) */
+    OUT float *a_im,               /* output array imaginary parts of gains (num_tx, num_paths) */
+    OUT float *tau                 /* output array of delays (num_tx, num_paths) */
 )
 {
     /* Load the scene */
@@ -297,65 +298,45 @@ void compute_paths(
     - a???
     */
     /* TODO calculate a and tau in moeller_trumbore */
-    /* shape (num_bounces, num_tx, num_paths) */
-    Vec3 *hits = (Vec3*)malloc(num_bounces * num_tx * num_paths * sizeof(Vec3));
-    int32_t *hit_indices = (int32_t*)malloc(num_bounces * num_tx * num_paths * sizeof(int32_t));
-    tau = (float*)memset(tau, 0, num_paths * sizeof(float));
+    /* shape (num_tx, num_paths) */
+    Vec3 *hits = (Vec3*)malloc(num_tx * num_paths * sizeof(Vec3));
+    int32_t *hit_indices = (int32_t*)malloc(num_tx * num_paths * sizeof(int32_t));
+    tau = (float*)memset(tau, 0, num_tx * num_paths * sizeof(float));
     float t;
     int32_t ind;
     Ray *r;
     Vec3 *h;
-    for (size_t i = 0; i < num_bounces; ++i)
+    size_t off;
+    for (size_t i = 0; i < num_bounces; ++i) {
+        off = 0;
         for (size_t j = 0; j < num_tx; ++j)
             for (size_t k = 0; k < num_paths; ++k) {
                 t = -1.;
                 ind = -1;
-                r = &rays[j * num_paths + k];
+                r = &rays[off];
                 moeller_trumbore(r, &mesh, &t, &ind);
-                tau[k] += t;
-                hit_indices[i * num_tx * num_paths + j * num_paths + k] = ind;
-                h = &hits[i * num_tx * num_paths + j * num_paths + k];
+                tau[off] += t;
+                hit_indices[off] = ind;
+                h = &hits[off];
                 *h = vec3_scale(&r->d, t);
                 *h = vec3_add(h, &r->o);
                 r->o = *h;
+                off += 1;
             }
+    }
 
     /* Calculate tau */
     for (size_t i = 0; i < num_paths; ++i)
         tau[i] /= SPEED_OF_LIGHT;
 
-    /* TODO Remove */
-    for (size_t i = 0; i < num_bounces; ++i)
-        for (size_t j = 0; j < num_rx; ++j)
-            for (size_t k = 0; k < num_paths; ++k) {
-                h = &hits[i * num_tx * num_paths + j * num_paths + k];
-                a[i * num_rx * num_paths * 3 + j * num_paths * 3 + k * 3] = h->x;
-                a[i * num_rx * num_paths * 3 + j * num_paths * 3 + k * 3 + 1] = h->y;
-                a[i * num_rx * num_paths * 3 + j * num_paths * 3 + k * 3 + 2] = h->z;
-            }
-
     /* Free */
-    /* Free the hits */
-    /*
-    for (size_t i = 0; i < num_bounces; ++i) {
-        for (size_t j = 0; j < num_tx; ++j) {
-            free(hits[i][j]);
-            free(hit_indices[i][j]);
-        }
-        free(hits[i]);
-        free(hit_indices[i]);
-    }
     free(hits);
     free(hit_indices);
-    */
-    /* Free the rays */
-    // for (size_t i = 0; i < num_tx; ++i)
-    //     free(rays[i]);
-    // free(rays);
-    // /* Free the mesh */
-    // free(mesh.vertices);
-    // free(mesh.rms);
-    // free(mesh.indices);
-    // free(mesh.rm_indices);
-    // free(mesh.normals);
+    free(rays);
+    /* Free the mesh */
+    free(mesh.vertices);
+    free(mesh.rms);
+    free(mesh.indices);
+    free(mesh.rm_indices);
+    free(mesh.normals);
 }

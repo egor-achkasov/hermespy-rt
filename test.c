@@ -19,8 +19,9 @@ int main(int argc, char **argv)
     size_t num_tx = 1;
     size_t num_paths = 10000;
     size_t num_bounces = 3;
-    float *a = (float*)malloc(num_bounces * num_tx * num_paths * 3 * sizeof(float));
-    float *tau = (float*)malloc(num_paths * sizeof(float));
+    float *a_re = (float*)malloc(num_tx * num_paths * sizeof(float));
+    float *a_im = (float*)malloc(num_tx * num_paths * sizeof(float));
+    float *tau = (float*)malloc(num_tx * num_paths * sizeof(float));
     compute_paths(
         argv[1],
         rx_positions,
@@ -29,5 +30,5 @@ int main(int argc, char **argv)
         tx_velocities,
         carrier_frequency,
         num_rx, num_tx, num_paths, num_bounces,
-        a, tau);
+        a_re, a_im, tau);
 }
