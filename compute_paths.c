@@ -103,6 +103,11 @@ Vec3 vec3_scale(const Vec3 *a, float s)
 {
   return (Vec3){a->x * s, a->y * s, a->z * s};
 }
+Vec3 vec3_normalize(const Vec3 *a)
+{
+  float norm = sqrtf(a->x * a->x + a->y * a->y + a->z * a->z);
+  return (Vec3){a->x / norm, a->y / norm, a->z / norm};
+}
 
 /* ==== MESH LOADING ==== */
 
@@ -259,6 +264,7 @@ Mesh load_mesh_ply(const char *mesh_filepath, float carrier_frequency)
     u = vec3_sub(v2, v1);
     v = vec3_sub(v3, v1);
     mesh.normals[i / 3] = vec3_cross(&u, &v);
+    mesh.normals[i / 3] = vec3_normalize(&mesh.normals[i / 3]);
   }
 
   fclose(f);
