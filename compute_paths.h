@@ -18,12 +18,14 @@
  * \param tx_positions transmitter positions, shape (num_tx, 3)
  * \param rx_velocities receiver velocities, shape (num_rx, 3)
  * \param tx_velocities transmitter velocities, shape (num_tx, 3)
- * \param carrier_frequency carrier frequency in Hz. Must be > 0.0
+ * \param carrier_frequency carrier frequency in GHz. Must be > 0.0
  * \param num_rx number of receivers. Must be > 0
  * \param num_tx number of transmitters. Must be > 0
  * \param num_paths number of paths to compute. Must be > 0
- * \param a_re output array of real parts of gains, shape (num_rx, num_tx, num_paths)
- * \param a_im output array of imaginary parts of gains, shape (num_rx, num_tx, num_paths)
+ * \param a_te_re output array of real parts of transverse electric gains, shape (num_rx, num_tx, num_paths)
+ * \param a_te_im output array of imaginary parts of transverse electric gains, shape (num_rx, num_tx, num_paths)
+ * \param a_tm_re output array of real parts of transverse magnetic gains, shape (num_rx, num_tx, num_paths)
+ * \param a_tm_im output array of imaginary parts of transverse magnetic gains, shape (num_rx, num_tx, num_paths)
  * \param tau output array of delays in seconds, shape (num_rx, num_tx, num_paths)
 */
 void compute_paths(
@@ -37,8 +39,10 @@ void compute_paths(
     IN size_t num_tx,              /* number of transmitters */
     IN size_t num_paths,           /* number of paths */
     IN size_t num_bounces,         /* number of bounces */
-    OUT float *a_re,               /* output array real parts of gains (num_rx, num_tx, num_paths) */
-    OUT float *a_im,               /* output array imaginary parts of gains (num_rx, num_tx, num_paths) */
+    OUT float *a_te_re,            /* output array real parts of TE gains (num_rx, num_tx, num_paths) */
+    OUT float *a_te_im,            /* output array imaginary parts of TE gains (num_rx, num_tx, num_paths) */
+    OUT float *a_tm_re,            /* output array real parts of TM gains (num_rx, num_tx, num_paths) */
+    OUT float *a_tm_im,            /* output array imaginary parts of TM gains (num_rx, num_tx, num_paths) */
     OUT float *tau                 /* output array of delays (num_rx, num_tx, num_paths) */
 );
 

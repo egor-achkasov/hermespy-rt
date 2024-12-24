@@ -14,7 +14,7 @@ num_paths = 10000
 num_bounces = 3
 
 # Call compute_paths
-a_im, a_re, tau = compute_paths(
+a_te_re, a_te_im, a_tm_re, a_tm_im, tau = compute_paths(
     mesh_filepath,
     rx_positions,
     tx_positions,
@@ -27,5 +27,6 @@ a_im, a_re, tau = compute_paths(
     num_bounces
 )
 
-print("Gains:", a_re + 1.j*a_im)
-print("Delays:", tau)
+print(f"TE Gains: {a_te_re + 1.j*a_te_im}")
+print(f"TM Gains: {a_tm_re + 1.j*a_tm_im}")
+print(f"Delays: {tau}")
