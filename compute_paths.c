@@ -384,7 +384,7 @@ void compute_paths(
   IN const float *tx_positions,  /* shape (num_tx, 3) */
   IN const float *rx_velocities, /* shape (num_rx, 3) */
   IN const float *tx_velocities, /* shape (num_tx, 3) */
-  IN float carrier_frequency,    /* > 0.0 */
+  IN float carrier_frequency,    /* > 0.0 (IN GHz!) */
   IN size_t num_rx,              /* number of receivers */
   IN size_t num_tx,              /* number of transmitters */
   IN size_t num_paths,           /* number of paths */
@@ -399,7 +399,7 @@ void compute_paths(
   /* Load the scene */
   Mesh mesh = load_mesh_ply(mesh_filepath, carrier_frequency);
 
-  /* Calculate fibonacci sphere */
+  /* Calculate a fibonacci sphere */
   Vec3 *ray_directions = (Vec3*)malloc(num_paths * sizeof(Vec3));
   float k, phi, theta;
   for (size_t i = 0; i < num_paths; ++i) {

@@ -47,7 +47,7 @@ compute_paths_wrapper(
         (const float*)tx_pos_info.ptr,  // Tx positions
         (const float*)rx_vel_info.ptr,  // Rx velocities
         (const float*)tx_vel_info.ptr,  // Tx velocities
-        carrier_frequency / 1e9,  // Carrier frequency in GHz
+        carrier_frequency,  // Carrier frequency in GHz
         (size_t)num_rx,
         (size_t)num_tx,
         (size_t)num_paths,
@@ -91,4 +91,9 @@ PYBIND11_MODULE(rt, m) {
           py::arg("num_tx"),
           py::arg("num_paths"),
           py::arg("num_bounces"));
+
+    // Scene filepaths
+    m.def("get_scene_fp_box",
+        []() { return __FILE__ + std::string("/scenes/box.ply"); }
+    );
 }
