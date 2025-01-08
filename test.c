@@ -14,7 +14,7 @@ int main(int argc, char **argv)
   float tx_positions[3] = {0.0, 0.0, 2.5};
   float rx_velocities[3] = {0.0, 0.0, 0.0};
   float tx_velocities[3] = {0.0, 0.0, 0.0};
-  float carrier_frequency = 2.4e9; /* 2.4 GHz */
+  float carrier_frequency = 3.0; /* 3 GHz */
   size_t num_rx = 1;
   size_t num_tx = 1;
   size_t num_paths = 10000;
