@@ -274,8 +274,8 @@ Mesh load_mesh_ply(const char *mesh_filepath, float carrier_frequency)
 
 /** Compute Moeleer-Trumbore intersection algorithm.
  * 
- * \param ray the ray
- * \param mesh the mesh
+ * \param ray ray to cast to the mesh
+ * \param mesh triangle mesh
  * \param t output distance to the hit point. If no hit, t is not modified.
  * \param ind output index of the hit triangle. If no hit, i is not modified.
  * \param theta output angle of incidence
@@ -374,7 +374,6 @@ void refl_coefs(
         sqrt_eta_cos_theta1_im + cos_theta2_im,
         r_tm_re, r_tm_im);
 }
-  
 
 /* ==== MAIN FUNCTION ==== */
 
@@ -427,10 +426,7 @@ void compute_paths(
   }
   free(ray_directions);
 
-  /* Bounce the rays. On each bounce:
-  * - Add path length / SPEED_OF_LIGHT to tau
-  * - Update gains using eqs. (31a)-(31b) from ITU-R P.2040-3
-  */
+  /* Initialize variables needed for the RT */
   /* TODO add active mask */
   /* shape (num_tx, num_paths) */
   float *tau_t = (float*)calloc(num_tx * num_paths, sizeof(float));
@@ -443,8 +439,19 @@ void compute_paths(
   float t, r_te_re, r_te_im, r_tm_re, r_tm_im;
   float a_te_re_new, a_te_im_new, a_tm_re_new, a_tm_im_new;
   int32_t ind;
+  /* temp ray */
   Ray *r;
-  Vec3 *h = (Vec3*)malloc(sizeof(Vec3)); /* temp vector */
+  /* temp vector */
+  Vec3 *h = (Vec3*)malloc(sizeof(Vec3));
+  /* Friis free space loss multiplier.
+  Multiply this by a distance and take the second power to get a free space loss. */
+  float free_space_loss_multiplier = 2.f * PI * carrier_frequency * 1e9 / SPEED_OF_LIGHT;
+  float free_space_loss;
+
+  /* Bounce the rays. On each bounce:
+  * - Add path length / SPEED_OF_LIGHT to tau
+  * - Update gains using eqs. (31a)-(31b) from ITU-R P.2040-3
+  */
   for (size_t i = 0; i < num_bounces; ++i) {
     for (size_t off = 0; off != num_tx * num_paths; ++off) {
       /* Init */
@@ -454,12 +461,19 @@ void compute_paths(
       /* Find the hit point and trinagle.
       Calculate an angle of incidence */
       moeller_trumbore(r, &mesh, &t, &ind, &theta);
-      /* Calcilate the reflection coefficients
+      /* Calculate the reflection coefficients
       R_{eTE} and R_{eTM} */
       refl_coefs(&mesh.rms[mesh.rm_indices[ind]],
                   theta,
                   &r_te_re, &r_te_im,
                   &r_tm_re, &r_tm_im);
+      /* Calculate the free space loss */
+      free_space_loss = free_space_loss_multiplier * t;
+      free_space_loss = free_space_loss * free_space_loss;
+      r_te_re /= free_space_loss;
+      r_te_im /= free_space_loss;
+      r_tm_re /= free_space_loss;
+      r_tm_im /= free_space_loss;
       /* Update the gains */
       a_te_re_new = a_te_re_t[off] * r_te_re - a_te_im_t[off] * r_te_im;
       a_te_im_new = a_te_re_t[off] * r_te_im + a_te_im_t[off] * r_te_re;

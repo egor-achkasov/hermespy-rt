@@ -9,9 +9,6 @@
 /** Compute gains and delays between in a Mitsuba scene.
  * 
  * Scene must be defined in a specific PLY format. See README for details.
- * The meshes must be present in the same directory as the .xml file,
- * under meshes/ directory in .ply files in PLY format.
- * Meshes filenames must be the same as the name of the object in the .xml file.
  * 
  * \param mesh_filepath path to a mesh .ply file
  * \param rx_positions receiver positions, shape (num_rx, 3)
