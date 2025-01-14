@@ -5,7 +5,7 @@
 #include <string.h> /* for strlen, sprintf */
 #include <stdio.h>  /* for fopen, FILE, fclose */
 #include <math.h>   /* for sin, cos, sqrt */
-#include <stdint.h> /* for int32_t */
+#include <stdint.h> /* for int32_t, uint8_t */
 
 #define PI 3.14159265358979323846f /* pi */
 #define SPEED_OF_LIGHT 299792458.0f /* m/s */
@@ -427,7 +427,6 @@ void compute_paths(
   free(ray_directions);
 
   /* Initialize variables needed for the RT */
-  /* TODO add active mask */
   /* shape (num_tx, num_paths) */
   float *tau_t = (float*)calloc(num_tx * num_paths, sizeof(float));
   float *a_te_re_t = (float*)malloc(num_tx * num_paths * sizeof(float));
@@ -436,12 +435,15 @@ void compute_paths(
   float *a_tm_im_t = (float*)calloc(num_tx * num_paths, sizeof(float));
   for (size_t i = 0; i < num_tx * num_paths; ++i)
     a_te_re_t[i] = a_tm_re_t[i] = 1.f;
+  /* Active rays bitmask. 1 if the ray is still traced, 0 if it has left the scene */
+  uint8_t *active = (uint8_t*)malloc((num_tx * num_paths / 8 + 1) * sizeof(uint8_t));
+  for (size_t i = 0; i < num_tx * num_paths / 8 + 1; ++i)
+    active[i] = 0xff;
+  /* Temporary variables */
   float t, r_te_re, r_te_im, r_tm_re, r_tm_im;
   float a_te_re_new, a_te_im_new, a_tm_re_new, a_tm_im_new;
   int32_t ind;
-  /* temp ray */
   Ray *r;
-  /* temp vector */
   Vec3 *h = (Vec3*)malloc(sizeof(Vec3));
   /* Friis free space loss multiplier.
   Multiply this by a distance and take the second power to get a free space loss. */
@@ -454,6 +456,9 @@ void compute_paths(
   */
   for (size_t i = 0; i < num_bounces; ++i) {
     for (size_t off = 0; off != num_tx * num_paths; ++off) {
+      /* Check if the ray is active */
+      if (!(active[off / 8] & (1 << (off % 8))))
+        continue;
       /* Init */
       t = -1.f;
       ind = -1;
@@ -461,6 +466,13 @@ void compute_paths(
       /* Find the hit point and trinagle.
       Calculate an angle of incidence */
       moeller_trumbore(r, &mesh, &t, &ind, &theta);
+      if (ind == -1) { /* Ray hit nothing */
+        active[off / 8] &= ~(1 << (off % 8));
+        a_te_im_t[off] = a_te_re_t[off] = 0.f;
+        a_tm_im_t[off] = a_tm_re_t[off] = 0.f;
+        tau_t[off] = -1.f;
+        continue;
+      }
       /* Calculate the reflection coefficients
       R_{eTE} and R_{eTM} */
       refl_coefs(&mesh.rms[mesh.rm_indices[ind]],
@@ -500,17 +512,23 @@ void compute_paths(
   size_t off_a;
   for (size_t i = 0; i < num_rx; ++i) 
     for (size_t off = 0; off != num_tx * num_paths; ++off) {
+      /* Check if the ray is active */
+      if (!(active[off / 8] & (1 << (off % 8))))
+        continue;
       /* Init */
       t = -1.f;
       ind = -1;
       r = &rays[off];
+      r->d = (Vec3){rx_positions[i * 3], rx_positions[i * 3 + 1], rx_positions[i * 3 + 2]};
+      r->d = vec3_sub(&r->d, &r->o);
       off_a = i * num_tx * num_paths + off;
       /* See if the return ray hits any abstacle */
       moeller_trumbore(r, &mesh, &t, &ind, &theta);
-      if (ind != -1) { /* Return ray is blocked */
+      if (ind == -1) { /* Return ray hit nothing */
         tau[off_a] = -1.;
         a_te_im[off_a] = a_te_re[off_a] = 0.f;
         a_tm_im[off_a] = a_tm_re[off_a] = 0.f;
+        continue;
       }
       /* Set the gains */
       a_te_re[off_a] = a_te_re_t[off];
@@ -518,13 +536,12 @@ void compute_paths(
       a_tm_re[off_a] = a_tm_re_t[off];
       a_tm_im[off_a] = a_tm_im_t[off];
       /* Set the delays */
-      r->d = (Vec3){rx_positions[i * 3], rx_positions[i * 3 + 1], rx_positions[i * 3 + 2]};
-      r->d = vec3_sub(&r->o, &r->d);
       t = sqrtf(vec3_dot(&r->d, &r->d));
       tau[off_a] = tau_t[off] + t / SPEED_OF_LIGHT;
     }
 
   /* Free */
+  free(active);
   free(rays);
   free_mesh(&mesh);
 }
