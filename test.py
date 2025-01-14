@@ -12,6 +12,7 @@ num_rx = 1
 num_tx = 1
 num_paths = 10000
 num_bounces = 3
+num_samples = 150
 
 # Call compute_paths
 a_te_re, a_te_im, a_tm_re, a_tm_im, tau = compute_paths(
@@ -24,7 +25,8 @@ a_te_re, a_te_im, a_tm_re, a_tm_im, tau = compute_paths(
     num_rx,
     num_tx,
     num_paths,
-    num_bounces
+    num_bounces,
+    num_samples
 )
 
 print(f"TE Gains: {a_te_re + 1.j*a_te_im}")

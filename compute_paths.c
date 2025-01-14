@@ -389,6 +389,7 @@ void compute_paths(
   IN size_t num_tx,              /* number of transmitters */
   IN size_t num_paths,           /* number of paths */
   IN size_t num_bounces,         /* number of bounces */
+  IN size_t num_samples,         /* number of samples */
   OUT float *a_te_re,            /* output array real parts of TE gains (num_rx, num_tx, num_paths) */
   OUT float *a_te_im,            /* output array imaginary parts of TE gains (num_rx, num_tx, num_paths) */
   OUT float *a_tm_re,            /* output array real parts of TM gains (num_rx, num_tx, num_paths) */
@@ -472,8 +473,7 @@ void compute_paths(
       tau[off] += t / SPEED_OF_LIGHT;
       /* Advance the ray to the hit point */
       *h = vec3_scale(&r->d, t);
-      *h = vec3_add(h, &r->o);
-      r->o = *h;
+      r->o = vec3_add(h, &r->o);
     }
   }
   free(h);

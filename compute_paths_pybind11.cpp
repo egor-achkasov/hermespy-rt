@@ -12,9 +12,9 @@ extern "C" {
 namespace py = pybind11;
 
 std::tuple<
-  py::array_t<float>, py::array_t<float>,
-  py::array_t<float>, py::array_t<float>,
-  py::array_t<float> >
+  py::array_t<float>, py::array_t<float>,  // a_te_re, a_te_im
+  py::array_t<float>, py::array_t<float>,  // a_tm_re, a_tm_im
+  py::array_t<float> >                     // tau
 compute_paths_wrapper(
     const std::string &mesh_filepath,
     py::array_t<float> rx_positions,
@@ -25,7 +25,8 @@ compute_paths_wrapper(
     int num_rx,
     int num_tx,
     int num_paths,
-    int num_bounces
+    int num_bounces,
+    int num_samples
 ) {
     // Prepare input arrays (this is a basic implementation, check shapes and memory layout)
     py::buffer_info rx_pos_info = rx_positions.request();
@@ -52,6 +53,7 @@ compute_paths_wrapper(
         (size_t)num_tx,
         (size_t)num_paths,
         (size_t)num_bounces,
+        (size_t)num_samples,
         a_te_re, a_te_im, a_tm_re, a_tm_im,  // Gains
         tau // Delays
     );
@@ -90,7 +92,8 @@ PYBIND11_MODULE(rt, m) {
           py::arg("num_rx"),
           py::arg("num_tx"),
           py::arg("num_paths"),
-          py::arg("num_bounces"));
+          py::arg("num_bounces"),
+          py::arg("num_samples"));
 
     // Scene filepaths
     m.def("get_scene_fp_box",

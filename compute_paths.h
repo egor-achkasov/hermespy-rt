@@ -22,6 +22,8 @@
  * \param num_rx number of receivers. Must be > 0
  * \param num_tx number of transmitters. Must be > 0
  * \param num_paths number of paths to compute. Must be > 0
+ * \param num_bounces number of bounces to compute. Must be > 0
+ * \param num_samples number of samples in the original signal. Must be > 0
  * \param a_te_re output array of real parts of transverse electric gains, shape (num_rx, num_tx, num_paths)
  * \param a_te_im output array of imaginary parts of transverse electric gains, shape (num_rx, num_tx, num_paths)
  * \param a_tm_re output array of real parts of transverse magnetic gains, shape (num_rx, num_tx, num_paths)
@@ -39,6 +41,7 @@ void compute_paths(
     IN size_t num_tx,              /* number of transmitters */
     IN size_t num_paths,           /* number of paths */
     IN size_t num_bounces,         /* number of bounces */
+    IN size_t num_samples,         /* number of samples */
     OUT float *a_te_re,            /* output array real parts of TE gains (num_rx, num_tx, num_paths) */
     OUT float *a_te_im,            /* output array imaginary parts of TE gains (num_rx, num_tx, num_paths) */
     OUT float *a_tm_re,            /* output array real parts of TM gains (num_rx, num_tx, num_paths) */

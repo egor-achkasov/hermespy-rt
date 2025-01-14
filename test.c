@@ -19,6 +19,7 @@ int main(int argc, char **argv)
   size_t num_tx = 1;
   size_t num_paths = 10000;
   size_t num_bounces = 3;
+  size_t num_samples = 150;
   float *a_te_re = (float*)malloc(num_rx * num_tx * num_paths * sizeof(float));
   float *a_te_im = (float*)malloc(num_rx * num_tx * num_paths * sizeof(float));
   float *a_tm_re = (float*)malloc(num_rx * num_tx * num_paths * sizeof(float));
@@ -31,7 +32,7 @@ int main(int argc, char **argv)
     rx_velocities,
     tx_velocities,
     carrier_frequency,
-    num_rx, num_tx, num_paths, num_bounces,
+    num_rx, num_tx, num_paths, num_bounces, num_samples,
     a_te_re, a_te_im, a_tm_re, a_tm_im,
     tau);
 
