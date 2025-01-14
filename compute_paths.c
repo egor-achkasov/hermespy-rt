@@ -384,6 +384,7 @@ void compute_paths(
   IN const float *rx_velocities, /* shape (num_rx, 3) */
   IN const float *tx_velocities, /* shape (num_tx, 3) */
   IN float carrier_frequency,    /* > 0.0 (IN GHz!) */
+  IN float sampling_frequency,   /* > 0.0 (IN Hz!) */
   IN size_t num_rx,              /* number of receivers */
   IN size_t num_tx,              /* number of transmitters */
   IN size_t num_paths,           /* number of paths */
@@ -503,6 +504,12 @@ void compute_paths(
     }
   }
   free(h);
+
+  /* Init a */
+  for (size_t i = 0; i < num_rx * num_tx * num_paths; ++i) {
+    a_te_re[i] = a_te_im[i] = 0.f;
+    a_tm_re[i] = a_tm_im[i] = 0.f;
+  }
 
   /* Do the final propagations from the final hit points
   * directly to the receivers.

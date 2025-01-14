@@ -22,6 +22,7 @@ compute_paths_wrapper(
     py::array_t<float> rx_velocities,
     py::array_t<float> tx_velocities,
     float carrier_frequency,
+    float sampling_frequency,
     int num_rx,
     int num_tx,
     int num_paths,
@@ -49,6 +50,7 @@ compute_paths_wrapper(
         (const float*)rx_vel_info.ptr,  // Rx velocities
         (const float*)tx_vel_info.ptr,  // Tx velocities
         carrier_frequency,  // Carrier frequency in GHz
+        sampling_frequency, // Sampling frequency in Hz
         (size_t)num_rx,
         (size_t)num_tx,
         (size_t)num_paths,
@@ -89,6 +91,7 @@ PYBIND11_MODULE(rt, m) {
           py::arg("rx_velocities"),
           py::arg("tx_velocities"),
           py::arg("carrier_frequency"),
+          py::arg("sampling_frequency"),
           py::arg("num_rx"),
           py::arg("num_tx"),
           py::arg("num_paths"),

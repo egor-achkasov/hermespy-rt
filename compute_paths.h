@@ -16,6 +16,7 @@
  * \param rx_velocities receiver velocities, shape (num_rx, 3)
  * \param tx_velocities transmitter velocities, shape (num_tx, 3)
  * \param carrier_frequency carrier frequency in GHz. Must be > 0.0
+ * \param sampling_frequency sampling frequency in Hz. Must be > 0.0
  * \param num_rx number of receivers. Must be > 0
  * \param num_tx number of transmitters. Must be > 0
  * \param num_paths number of paths to compute. Must be > 0
@@ -34,6 +35,7 @@ void compute_paths(
     IN const float *rx_velocities, /* shape (num_rx, 3) */
     IN const float *tx_velocities, /* shape (num_tx, 3) */
     IN float carrier_frequency,    /* > 0.0 (IN GHz!) */
+    IN float sampling_frequency,   /* > 0.0 (IN Hz!) */
     IN size_t num_rx,              /* number of receivers */
     IN size_t num_tx,              /* number of transmitters */
     IN size_t num_paths,           /* number of paths */

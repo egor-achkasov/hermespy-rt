@@ -15,6 +15,7 @@ int main(int argc, char **argv)
   float rx_velocities[3] = {0.0, 0.0, 0.0};
   float tx_velocities[3] = {0.0, 0.0, 0.0};
   float carrier_frequency = 3.0; /* 3 GHz */
+  float sampling_frequency = 3*1e9; /* 3 GHz */
   size_t num_rx = 1;
   size_t num_tx = 1;
   size_t num_paths = 10000;
@@ -32,6 +33,7 @@ int main(int argc, char **argv)
     rx_velocities,
     tx_velocities,
     carrier_frequency,
+    sampling_frequency,
     num_rx, num_tx, num_paths, num_bounces, num_samples,
     a_te_re, a_te_im, a_tm_re, a_tm_im,
     tau);

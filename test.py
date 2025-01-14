@@ -8,6 +8,7 @@ tx_positions = np.array([[0., 0., 2.5]], dtype=np.float64)
 rx_velocities = np.array([[0., 0., 0.]], dtype=np.float64)
 tx_velocities = np.array([[0., 0., 0.]], dtype=np.float64)
 carrier_frequency = 3.0
+sampling_rate = 3*1e9
 num_rx = 1
 num_tx = 1
 num_paths = 10000
@@ -22,6 +23,7 @@ a_te_re, a_te_im, a_tm_re, a_tm_im, tau = compute_paths(
     rx_velocities,
     tx_velocities,
     carrier_frequency,
+    sampling_rate,
     num_rx,
     num_tx,
     num_paths,
