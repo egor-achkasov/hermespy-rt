@@ -5,12 +5,10 @@
 #include <string.h> /* for strlen, sprintf */
 #include <stdio.h>  /* for fopen, FILE, fclose */
 #include <math.h>   /* for sin, cos, sqrt */
-#include <stdint.h>
+#include <stdint.h> /* for int32_t */
 
 #define PI 3.14159265358979323846f /* pi */
 #define SPEED_OF_LIGHT 299792458.0f /* m/s */
-#define EPS 1e-6 /* small number for float comparison */
-#define EPS0 8.854187817e-12 /* vacuum permitivity */
 
 typedef struct {
   float x, y, z;
@@ -56,7 +54,7 @@ void csqrtf(
 )
 {
   *sqrt_re = sqrtf((re + abs) / 2.f);
-  if (re > -EPS && im < EPS)
+  if (fabsf(im) < __FLT_EPSILON__ && re >= -__FLT_EPSILON__)
     *sqrt_im = 0;
   else {
     *sqrt_im = sqrtf((abs - re) / 2.f);
@@ -230,8 +228,9 @@ Mesh load_mesh_ply(const char *mesh_filepath, float carrier_frequency)
     rm = &mesh.rms[i];
     /* calculate eta */
     rm->eta_re = abcd[0] * powf(carrier_frequency, abcd[1]);
+    /* eq. 12 */
     rm->eta_im = (abcd[2] * powf(carrier_frequency, abcd[3]))
-               / (EPS0 * -2.f * PI * carrier_frequency);
+               / (0.0556325027352135f * carrier_frequency);
     rm->eta_abs_pow2 = rm->eta_re * rm->eta_re + rm->eta_im * rm->eta_im;
     rm->eta_abs = sqrtf(rm->eta_abs_pow2);
     rm->eta_abs_inv_sqrt = 1.f / sqrtf(rm->eta_abs);
@@ -303,19 +302,19 @@ void moeller_trumbore(
     e2 = vec3_sub(&v3, &v1);
     re2_cross = vec3_cross(&ray->d, &e2);
     d = vec3_dot(&e1, &re2_cross);
-    if (d > -EPS && d < EPS) continue;
+    if (d > -__FLT_EPSILON__ && d < __FLT_EPSILON__) continue;
     s = vec3_sub(&ray->o, &v1);
     u = vec3_dot(&s, &re2_cross) / d;
-    if ((u < 0. && fabs(u) > EPS)
-    || (u > 1. && fabs(u - 1.) > EPS))
+    if ((u < 0. && fabs(u) > __FLT_EPSILON__)
+    || (u > 1. && fabs(u - 1.) > __FLT_EPSILON__))
       continue;
     se1_cross = vec3_cross(&s, &e1);
     v = vec3_dot(&ray->d, &se1_cross) / d;
-    if ((v < 0. && fabs(v) > EPS)
-    || (u + v > 1. && fabs(u + v - 1.) > EPS))
+    if ((v < 0. && fabs(v) > __FLT_EPSILON__)
+    || (u + v > 1. && fabs(u + v - 1.) > __FLT_EPSILON__))
       continue;
     dist_tmp = vec3_dot(&e2, &se1_cross) / d;
-    if (dist_tmp > EPS && dist_tmp < dist) {
+    if (dist_tmp > __FLT_EPSILON__ && dist_tmp < dist) {
       dist = dist_tmp;
       *t = dist;
       *ind = i / 3;
@@ -347,17 +346,18 @@ void refl_coefs(
 )
 {
   float sin_theta1 = sinf(theta1);
-  if (rm->eta_abs_inv_sqrt * sin_theta1 > 1.f - EPS) {
+  if (rm->eta_abs_inv_sqrt * sin_theta1 > 1.f - __FLT_EPSILON__) {
     *r_te_re = *r_tm_re = 1.f;
     *r_te_im = *r_tm_im = 0.f;
     return;
   }
 
+  /* eq. 33 */
   float sin_theta1_pow2 = sin_theta1 * sin_theta1;
-  float cos_theta2_re = sqrtf(1.f - rm->eta_inv_re / rm->eta_abs_pow2 * sin_theta1_pow2);
-  float cos_theta2_im = sqrtf(1.f + rm->eta_inv_im / rm->eta_abs_pow2 * sin_theta1_pow2);
+  float cos_theta2_re = sqrtf(1.f + rm->eta_inv_re / rm->eta_abs_pow2 * sin_theta1_pow2);
+  float cos_theta2_im = sqrtf(1.f - rm->eta_inv_im / rm->eta_abs_pow2 * sin_theta1_pow2);
 
-  /* R_{eTE} */
+  /* R_{eTE}, eq. 31a */
   float sqrt_eta_cos_theta2_re = rm->eta_sqrt_re * cos_theta2_re - rm->eta_sqrt_im * cos_theta2_im;
   float sqrt_eta_cos_theta2_im = rm->eta_sqrt_re * cos_theta2_im + rm->eta_sqrt_im * cos_theta2_re;
   float cos_theta1 = cosf(theta1);
@@ -365,7 +365,7 @@ void refl_coefs(
         cos_theta1 + sqrt_eta_cos_theta2_re, sqrt_eta_cos_theta2_im,
         r_te_re, r_te_im);
 
-  /* R_{eTM} */
+  /* R_{eTM}, eq. 31b */
   float sqrt_eta_cos_theta1_re = rm->eta_sqrt_re * cos_theta1;
   float sqrt_eta_cos_theta1_im = rm->eta_sqrt_im * cos_theta1;
   cdivf(sqrt_eta_cos_theta1_re - cos_theta2_re,

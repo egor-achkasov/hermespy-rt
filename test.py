@@ -30,3 +30,7 @@ a_te_re, a_te_im, a_tm_re, a_tm_im, tau = compute_paths(
 print(f"TE Gains: {a_te_re + 1.j*a_te_im}")
 print(f"TM Gains: {a_tm_re + 1.j*a_tm_im}")
 print(f"Delays: {tau}")
+print(f"a_te_re min, max: {np.min(a_te_re)}, {np.max(a_te_re)}")
+print(f"a_te_im min, max: {np.min(a_te_im)}, {np.max(a_te_im)}")
+print(f"a_tm_re min, max: {np.min(a_tm_re)}, {np.max(a_tm_re)}")
+print(f"a_tm_im min, max: {np.min(a_tm_im)}, {np.max(a_tm_im)}")
