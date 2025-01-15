@@ -35,12 +35,9 @@ compute_paths_wrapper(
     py::buffer_info rx_vel_info = rx_velocities.request();
     py::buffer_info tx_vel_info = tx_velocities.request();
 
-    // Output arrays
-    float *a_te_im = new float[num_tx * num_paths];
-    float *a_te_re = new float[num_tx * num_paths];
-    float *a_tm_im = new float[num_tx * num_paths];
-    float *a_tm_re = new float[num_tx * num_paths];
-    float *tau = new float[num_tx * num_paths];
+    // Output
+    size_t num_paths_out;
+    float *a_te_re, *a_te_im, *a_tm_re, *a_tm_im, *tau;
 
     // Call the C function
     compute_paths(
@@ -56,6 +53,7 @@ compute_paths_wrapper(
         (size_t)num_paths,
         (size_t)num_bounces,
         (size_t)num_samples,
+        &num_paths_out,
         a_te_re, a_te_im, a_tm_re, a_tm_im,  // Gains
         tau // Delays
     );
@@ -63,17 +61,17 @@ compute_paths_wrapper(
     // Convert output arrays into numpy arrays for easy use in Python
     // TODO prevent copying data
     // TODO construct np.complex64 array for a
-    py::array_t<float> a_te_im_array = py::array_t<float>({num_rx, num_tx, num_paths}, a_te_im);
-    py::array_t<float> a_te_re_array = py::array_t<float>({num_rx, num_tx, num_paths}, a_te_re);
-    py::array_t<float> a_tm_im_array = py::array_t<float>({num_rx, num_tx, num_paths}, a_tm_im);
-    py::array_t<float> a_tm_re_array = py::array_t<float>({num_rx, num_tx, num_paths}, a_tm_re);
-    py::array_t<float> tau_array = py::array_t<float>({num_rx, num_tx, num_paths}, tau);
+    py::array_t<float> a_te_re_array = py::array_t<float>({num_rx, num_tx, (int)num_paths_out}, a_te_re);
+    py::array_t<float> a_te_im_array = py::array_t<float>({num_rx, num_tx, (int)num_paths_out}, a_te_im);
+    py::array_t<float> a_tm_re_array = py::array_t<float>({num_rx, num_tx, (int)num_paths_out}, a_tm_re);
+    py::array_t<float> a_tm_im_array = py::array_t<float>({num_rx, num_tx, (int)num_paths_out}, a_tm_im);
+    py::array_t<float> tau_array = py::array_t<float>({num_rx, num_tx, (int)num_paths_out}, tau);
 
     // Deallocate arrays
-    delete[] a_te_im;
     delete[] a_te_re;
-    delete[] a_tm_im;
+    delete[] a_te_im;
     delete[] a_tm_re;
+    delete[] a_tm_im;
     delete[] tau;
 
     // Return the results as a tuple (gains, delays)
