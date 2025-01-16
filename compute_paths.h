@@ -11,10 +11,10 @@
  * Scene must be defined in a specific PLY format. See README for details.
  * 
  * \param mesh_filepath path to a mesh .ply file
- * \param rx_positions receiver positions, shape (num_rx, 3)
- * \param tx_positions transmitter positions, shape (num_tx, 3)
- * \param rx_velocities receiver velocities, shape (num_rx, 3)
- * \param tx_velocities transmitter velocities, shape (num_tx, 3)
+ * \param rx_pos receiver positions, shape (num_rx, 3)
+ * \param tx_pos transmitter positions, shape (num_tx, 3)
+ * \param rx_vel receiver velocities, shape (num_rx, 3)
+ * \param tx_vel transmitter velocities, shape (num_tx, 3)
  * \param carrier_frequency carrier frequency in GHz. Must be > 0.0
  * \param num_rx number of receivers. Must be > 0
  * \param num_tx number of transmitters. Must be > 0
@@ -39,10 +39,10 @@
 */
 void compute_paths(
     IN const char *mesh_filepath,   /* path to the mesh file */
-    IN const float *rx_positions,   /* shape (num_rx, 3) */
-    IN const float *tx_positions,   /* shape (num_tx, 3) */
-    IN const float *rx_velocities,  /* shape (num_rx, 3) */
-    IN const float *tx_velocities,  /* shape (num_tx, 3) */
+    IN const float *rx_pos,         /* shape (num_rx, 3) */
+    IN const float *tx_pos,         /* shape (num_tx, 3) */
+    IN const float *rx_vel,         /* shape (num_rx, 3) */
+    IN const float *tx_vel,         /* shape (num_tx, 3) */
     IN float carrier_frequency,     /* > 0.0 (IN GHz!) */
     IN size_t num_rx,               /* number of receivers */
     IN size_t num_tx,               /* number of transmitters */

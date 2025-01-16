@@ -379,10 +379,10 @@ void refl_coefs(
 
 void compute_paths(
   IN const char *mesh_filepath,   /* path to the mesh file */
-  IN const float *rx_positions,   /* shape (num_rx, 3) */
-  IN const float *tx_positions,   /* shape (num_tx, 3) */
-  IN const float *rx_velocities,  /* shape (num_rx, 3) */
-  IN const float *tx_velocities,  /* shape (num_tx, 3) */
+  IN const float *rx_pos,         /* shape (num_rx, 3) */
+  IN const float *tx_pos,         /* shape (num_tx, 3) */
+  IN const float *rx_vel,         /* shape (num_rx, 3) */
+  IN const float *tx_vel,         /* shape (num_tx, 3) */
   IN float carrier_frequency,     /* > 0.0 (IN GHz!) */
   IN size_t num_rx,               /* number of receivers */
   IN size_t num_tx,               /* number of transmitters */
@@ -399,7 +399,7 @@ void compute_paths(
   OUT float *a_te_im_scat,        /* output array imaginary parts of TE gains (num_bounces, num_rx, num_tx, num_paths) */
   OUT float *a_tm_re_scat,        /* output array real parts of TM gains (num_bounces, num_rx, num_tx, num_paths) */
   OUT float *a_tm_im_scat,        /* output array imaginary parts of TM gains (num_bounces, num_rx, num_tx, num_paths) */
-  OUT float *tau_scat            /* output array of delays (num_bounces, num_rx, num_tx, num_paths) */
+  OUT float *tau_scat             /* output array of delays (num_bounces, num_rx, num_tx, num_paths) */
 )
 {
   /* Init loop indices and offset variables */
@@ -423,15 +423,19 @@ void compute_paths(
     };
   }
 
+  /* Cast the positions and velocities to Vec3 */
+  Vec3 *rx_pos_v = (Vec3*)rx_pos;
+  Vec3 *tx_pos_v = (Vec3*)tx_pos;
+  Vec3 *rx_vel_v = (Vec3*)rx_vel;
+  Vec3 *tx_vel_v = (Vec3*)tx_vel;
+
   /* Create num_path rays for each tx */
   /* Shape (num_tx, num_paths) */
   Ray *rays = (Ray*)malloc(num_tx * num_paths * sizeof(Ray));
-  Vec3 tx_position;
   off = 0;
   for (i = 0; i < num_tx; ++i) {
-    tx_position = (Vec3){tx_positions[i * 3], tx_positions[i * 3 + 1], tx_positions[i * 3 + 2]};
     for (j = 0; j < num_paths; ++j) {
-      rays[off].o = tx_position;
+      rays[off].o = tx_pos_v[i];
       rays[off].d = ray_directions[j];
       ++off;
     }
@@ -474,9 +478,8 @@ void compute_paths(
       off = i * num_tx + j;
       t = -1.f;
       ind = -1;
-      r.o = (Vec3){tx_positions[j * 3], tx_positions[j * 3 + 1], tx_positions[j * 3 + 2]};
-      r.d = (Vec3){rx_positions[i * 3], rx_positions[i * 3 + 1], rx_positions[i * 3 + 2]};
-      r.d = vec3_sub(&r.d, &r.o);
+      r.o = tx_pos_v[j];
+      r.d = vec3_sub(&rx_pos_v[i], &r.o);
       moeller_trumbore(&r, &mesh, &t, &ind, &theta);
       if (ind != -1 && t <= 1.f) {
         /* An obstacle between the tx and the rx has been hit */
@@ -549,8 +552,7 @@ void compute_paths(
       r.o = r_ptr->o;
       for (j = 0; j != num_rx; ++j) {
         off_scat = i * num_rx * num_tx * num_paths + j * num_tx * num_paths + off;
-        r.d = (Vec3){rx_positions[j * 3], rx_positions[j * 3 + 1], rx_positions[j * 3 + 2]};
-        r.d = vec3_sub(&r.d, &r.o);
+        r.d = vec3_sub(&rx_pos_v[j], &r.o);
         ind = -1;
         moeller_trumbore(&r, &mesh, &t, &ind, &theta);
         if (ind != -1 && t <= 1.f) {
