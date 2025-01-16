@@ -15,14 +15,20 @@ int main(int argc, char **argv)
   float rx_velocities[3] = {0.0, 0.0, 0.0};
   float tx_velocities[3] = {0.0, 0.0, 0.0};
   float carrier_frequency = 3.0; /* 3 GHz */
-  float sampling_frequency = 3*1e9; /* 3 GHz */
   size_t num_rx = 1;
   size_t num_tx = 1;
   size_t num_paths = 10000;
   size_t num_bounces = 3;
-  size_t num_samples = 150;
-  size_t num_paths_out;
-  float *a_te_re, *a_te_im, *a_tm_re, *a_tm_im, *tau;
+  float *a_te_re_los = (float*)malloc(num_rx * num_tx * sizeof(float));
+  float *a_te_im_los = (float*)malloc(num_rx * num_tx * sizeof(float));
+  float *a_tm_re_los = (float*)malloc(num_rx * num_tx * sizeof(float));
+  float *a_tm_im_los = (float*)malloc(num_rx * num_tx * sizeof(float));
+  float *tau_los = (float*)malloc(num_rx * num_tx * sizeof(float));
+  float *a_te_re_scat = (float*)malloc(num_bounces * num_rx * num_tx * num_paths * sizeof(float));
+  float *a_te_im_scat = (float*)malloc(num_bounces * num_rx * num_tx * num_paths * sizeof(float));
+  float *a_tm_re_scat = (float*)malloc(num_bounces * num_rx * num_tx * num_paths * sizeof(float));
+  float *a_tm_im_scat = (float*)malloc(num_bounces * num_rx * num_tx * num_paths * sizeof(float));
+  float *tau_scat = (float*)malloc(num_bounces * num_rx * num_tx * num_paths * sizeof(float));
   compute_paths(
     argv[1],
     rx_positions,
@@ -30,26 +36,27 @@ int main(int argc, char **argv)
     rx_velocities,
     tx_velocities,
     carrier_frequency,
-    sampling_frequency,
-    num_rx, num_tx, num_paths, num_bounces, num_samples,
-    &num_paths_out,
-    a_te_re, a_te_im, a_tm_re, a_tm_im,
-    tau);
+    num_rx, num_tx, num_paths, num_bounces,
+    a_te_re_los, a_te_im_los, a_tm_re_los, a_tm_im_los, tau_los,
+    a_te_re_scat, a_te_im_scat, a_tm_re_scat, a_tm_im_scat, tau_scat
+  );
 
   /* Save the results */
-  FILE *f = fopen("a_te_re.bin", "wb");
-  fwrite(a_te_re, sizeof(float), num_rx * num_tx * num_paths_out, f);
-  fclose(f);
-  f = fopen("a_te_im.bin", "wb");
-  fwrite(a_te_im, sizeof(float), num_rx * num_tx * num_paths_out, f);
-  fclose(f);
-  f = fopen("a_tm_re.bin", "wb");
-  fwrite(a_tm_re, sizeof(float), num_rx * num_tx * num_paths_out, f);
-  fclose(f);
-  f = fopen("a_tm_im.bin", "wb");
-  fwrite(a_tm_im, sizeof(float), num_rx * num_tx * num_paths_out, f);
-  fclose(f);
-  f = fopen("tau.bin", "wb");
-  fwrite(tau, sizeof(float), num_rx * num_tx * num_paths_out, f);
-  fclose(f);
+
+  FILE *f;
+  #define WRITE_BIN(name, data, size) \
+    f = fopen(name, "wb"); \
+    fwrite(data, sizeof(float), size, f); \
+    fclose(f);
+
+  WRITE_BIN("a_te_re_los.bin", a_te_re_los, num_rx * num_tx);
+  WRITE_BIN("a_te_im_los.bin", a_te_im_los, num_rx * num_tx);
+  WRITE_BIN("a_tm_re_los.bin", a_tm_re_los, num_rx * num_tx);
+  WRITE_BIN("a_tm_im_los.bin", a_tm_im_los, num_rx * num_tx);
+  WRITE_BIN("tau_los.bin", tau_los, num_rx * num_tx);
+  WRITE_BIN("a_te_re_scat.bin", a_te_re_scat, num_bounces * num_rx * num_tx * num_paths);
+  WRITE_BIN("a_te_im_scat.bin", a_te_im_scat, num_bounces * num_rx * num_tx * num_paths);
+  WRITE_BIN("a_tm_re_scat.bin", a_tm_re_scat, num_bounces * num_rx * num_tx * num_paths);
+  WRITE_BIN("a_tm_im_scat.bin", a_tm_im_scat, num_bounces * num_rx * num_tx * num_paths);
+  WRITE_BIN("tau_scat.bin", tau_scat, num_bounces * num_rx * num_tx * num_paths);
 }

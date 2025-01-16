@@ -378,29 +378,33 @@ void refl_coefs(
 /* ==== MAIN FUNCTION ==== */
 
 void compute_paths(
-  IN const char *mesh_filepath,  /* path to the mesh file */
-  IN const float *rx_positions,  /* shape (num_rx, 3) */
-  IN const float *tx_positions,  /* shape (num_tx, 3) */
-  IN const float *rx_velocities, /* shape (num_rx, 3) */
-  IN const float *tx_velocities, /* shape (num_tx, 3) */
-  IN float carrier_frequency,    /* > 0.0 (IN GHz!) */
-  IN float sampling_frequency,   /* > 0.0 (IN Hz!) */
-  IN size_t num_rx,              /* number of receivers */
-  IN size_t num_tx,              /* number of transmitters */
-  IN size_t num_paths,           /* number of paths */
-  IN size_t num_bounces,         /* number of bounces */
-  IN size_t num_samples,         /* number of samples */
-  OUT size_t *num_paths_out,     /* number of paths computed */
-  OUT float *a_te_re,            /* output array real parts of TE gains (num_rx, num_tx, num_paths_out) */
-  OUT float *a_te_im,            /* output array imaginary parts of TE gains (num_rx, num_tx, num_paths_out) */
-  OUT float *a_tm_re,            /* output array real parts of TM gains (num_rx, num_tx, num_paths_out) */
-  OUT float *a_tm_im,            /* output array imaginary parts of TM gains (num_rx, num_tx, num_paths_out) */
-  OUT float *tau                 /* output array of delays (num_rx, num_tx, num_paths_out) */
+  IN const char *mesh_filepath,   /* path to the mesh file */
+  IN const float *rx_positions,   /* shape (num_rx, 3) */
+  IN const float *tx_positions,   /* shape (num_tx, 3) */
+  IN const float *rx_velocities,  /* shape (num_rx, 3) */
+  IN const float *tx_velocities,  /* shape (num_tx, 3) */
+  IN float carrier_frequency,     /* > 0.0 (IN GHz!) */
+  IN size_t num_rx,               /* number of receivers */
+  IN size_t num_tx,               /* number of transmitters */
+  IN size_t num_paths,            /* number of paths */
+  IN size_t num_bounces,          /* number of bounces */
+  /* LoS */
+  OUT float *a_te_re_los,         /* output array real parts of TE gains (num_rx, num_tx) */
+  OUT float *a_te_im_los,         /* output array imaginary parts of TE gains (num_rx, num_tx) */
+  OUT float *a_tm_re_los,         /* output array real parts of TM gains (num_rx, num_tx) */
+  OUT float *a_tm_im_los,         /* output array imaginary parts of TM gains (num_rx, num_tx) */
+  OUT float *tau_los,             /* output array of delays (num_rx, num_tx) */
+  /* Scatter */
+  OUT float *a_te_re_scat,        /* output array real parts of TE gains (num_bounces, num_rx, num_tx, num_paths) */
+  OUT float *a_te_im_scat,        /* output array imaginary parts of TE gains (num_bounces, num_rx, num_tx, num_paths) */
+  OUT float *a_tm_re_scat,        /* output array real parts of TM gains (num_bounces, num_rx, num_tx, num_paths) */
+  OUT float *a_tm_im_scat,        /* output array imaginary parts of TM gains (num_bounces, num_rx, num_tx, num_paths) */
+  OUT float *tau_scat            /* output array of delays (num_bounces, num_rx, num_tx, num_paths) */
 )
 {
   /* Init loop indices and offset variables */
   size_t i, j;
-  size_t off;
+  size_t off, off_scat;
 
   /* Load the scene */
   Mesh mesh = load_mesh_ply(mesh_filepath, carrier_frequency);
@@ -435,41 +439,30 @@ void compute_paths(
   free(ray_directions);
 
   /* Initialize variables needed for the RT */
-  /* Number of output paths is unknown at this point */
-  *num_paths_out = 0;
-  /* As num_paths_out is not known in advance,
-  * we will realloc the output arrays during propagation.
-  * We will start with a capacity of num_paths_out_realloc_cap
-  * and reallocate the arrays when needed.
-  */
-  const size_t num_paths_out_realloc_cap = 1024;
-  size_t num_cur_allocs = 1;
-  /* Init the output gains and delays */
-  /* shape (num_rx, num_tx, num_paths_out) */
-  a_te_re = (float*)malloc(num_rx * num_tx * num_paths_out_realloc_cap * sizeof(float));
-  a_te_im = (float*)malloc(num_rx * num_tx * num_paths_out_realloc_cap * sizeof(float));
-  a_tm_re = (float*)malloc(num_rx * num_tx * num_paths_out_realloc_cap * sizeof(float));
-  a_tm_im = (float*)malloc(num_rx * num_tx * num_paths_out_realloc_cap * sizeof(float));
-  tau = (float*)malloc(num_rx * num_tx * num_paths_out_realloc_cap * sizeof(float));
-  /* Bouncing rays gains and delays */
+
+  /* Bouncing (reflecting) rays gains and delays */
   /* shape (num_tx, num_paths) */
-  float *a_te_re_t = (float*)malloc(num_tx * num_paths * sizeof(float));
-  float *a_te_im_t = (float*)calloc(num_tx * num_paths, sizeof(float));
-  float *a_tm_re_t = (float*)malloc(num_tx * num_paths * sizeof(float));
-  float *a_tm_im_t = (float*)calloc(num_tx * num_paths, sizeof(float));
+  float *a_te_re_refl = (float*)malloc(num_tx * num_paths * sizeof(float));
+  float *a_te_im_refl = (float*)calloc(num_tx * num_paths, sizeof(float));
+  float *a_tm_re_refl = (float*)malloc(num_tx * num_paths * sizeof(float));
+  float *a_tm_im_refl = (float*)calloc(num_tx * num_paths, sizeof(float));
   for (size_t i = 0; i < num_tx * num_paths; ++i)
-    a_te_re_t[i] = a_tm_re_t[i] = 1.f;
+    a_te_re_refl[i] = a_tm_re_refl[i] = 1.f;
   float *tau_t = (float*)calloc(num_tx * num_paths, sizeof(float));
+
   /* Active rays bitmask. 1 if the ray is still traced, 0 if it has left the scene */
   uint8_t *active = (uint8_t*)malloc((num_tx * num_paths / 8 + 1) * sizeof(uint8_t));
   for (size_t i = 0; i < num_tx * num_paths / 8 + 1; ++i)
     active[i] = 0xff;
+  size_t num_active = num_tx * num_paths;
+
   /* Temporary variables */
   float t, r_te_re, r_te_im, r_tm_re, r_tm_im;
   float a_te_re_new, a_te_im_new, a_tm_re_new, a_tm_im_new;
   int32_t ind;
   Ray r, *r_ptr;
   Vec3 *h = (Vec3*)malloc(sizeof(Vec3));
+
   /* Friis free space loss multiplier.
   Multiply this by a distance and take the second power to get a free space loss. */
   float free_space_loss_multiplier = 2.f * PI * carrier_frequency * 1e9 / SPEED_OF_LIGHT;
@@ -478,40 +471,35 @@ void compute_paths(
   /* Calculate LoS paths directly from tx to rx */
   for (i = 0; i != num_rx; ++i)
     for (j = 0; j != num_tx; ++j) {
+      off = i * num_tx + j;
       t = -1.f;
       ind = -1;
       r.o = (Vec3){tx_positions[j * 3], tx_positions[j * 3 + 1], tx_positions[j * 3 + 2]};
       r.d = (Vec3){rx_positions[i * 3], rx_positions[i * 3 + 1], rx_positions[i * 3 + 2]};
       r.d = vec3_sub(&r.d, &r.o);
       moeller_trumbore(&r, &mesh, &t, &ind, &theta);
-      if (ind == -1) continue;
+      if (ind != -1 && t <= 1.f) {
+        /* An obstacle between the tx and the rx has been hit */
+        a_te_re_los[off] = a_te_im_los[off] = a_tm_re_los[off] = a_tm_im_los[off] = tau_los[off] = 0.f;
+        continue;
+      }
       /* No triangle has been hit, the path is LoS */
-      /* Calculate teh distance */
+      /* Calculate the distance */
       t = sqrtf(vec3_dot(&r.d, &r.d));
-      /* Calculate the delay */
-      tau[*num_paths_out] = t / SPEED_OF_LIGHT;
       /* Calculate the free space loss */
       free_space_loss = free_space_loss_multiplier * t;
       free_space_loss = free_space_loss * free_space_loss;
       /* Set the gains for this LoS path */
-      a_te_re[*num_paths_out] = a_tm_re[*num_paths_out] = 1.f / free_space_loss;
-      a_te_im[*num_paths_out] = a_tm_im[*num_paths_out] = 0.f;
-      /* Increment the number of paths */
-      ++(*num_paths_out);
-      /* Realloc the output arrays if needed */
-      if (*num_paths_out % num_paths_out_realloc_cap == 0) {
-        ++num_cur_allocs;
-        a_te_re = (float*)realloc(a_te_re, num_rx * num_tx * num_cur_allocs * num_paths_out_realloc_cap * sizeof(float));
-        a_te_im = (float*)realloc(a_te_im, num_rx * num_tx * num_cur_allocs * num_paths_out_realloc_cap * sizeof(float));
-        a_tm_re = (float*)realloc(a_tm_re, num_rx * num_tx * num_cur_allocs * num_paths_out_realloc_cap * sizeof(float));
-        a_tm_im = (float*)realloc(a_tm_im, num_rx * num_tx * num_cur_allocs * num_paths_out_realloc_cap * sizeof(float));
-        tau = (float*)realloc(tau, num_rx * num_tx * num_cur_allocs * num_paths_out_realloc_cap * sizeof(float));
-      }
+      a_te_re_los[off] = a_tm_re_los[off] = 1.f / free_space_loss;
+      a_te_im_los[off] = a_tm_im_los[off] = 0.f;
+      /* Calculate the delay */
+      tau_los[off] = t / SPEED_OF_LIGHT;
     }
 
   /* Bounce the rays. On each bounce:
   * - Add path length / SPEED_OF_LIGHT to tau
   * - Update gains using eqs. (31a)-(31b) from ITU-R P.2040-3
+  * - Spawn refraction rays with gains as per eqs. (31c)-(31d) from ITU-R P.2040-3
   */
   for (i = 0; i < num_bounces; ++i) {
     for (off = 0; off != num_tx * num_paths; ++off) {
@@ -527,9 +515,7 @@ void compute_paths(
       moeller_trumbore(r_ptr, &mesh, &t, &ind, &theta);
       if (ind == -1) { /* Ray hit nothing */
         active[off / 8] &= ~(1 << (off % 8));
-        a_te_im_t[off] = a_te_re_t[off] = 0.f;
-        a_tm_im_t[off] = a_tm_re_t[off] = 0.f;
-        tau_t[off] = -1.f;
+        --num_active;
         continue;
       }
       /* Calculate the reflection coefficients
@@ -546,14 +532,14 @@ void compute_paths(
       r_tm_re /= free_space_loss;
       r_tm_im /= free_space_loss;
       /* Update the gains */
-      a_te_re_new = a_te_re_t[off] * r_te_re - a_te_im_t[off] * r_te_im;
-      a_te_im_new = a_te_re_t[off] * r_te_im + a_te_im_t[off] * r_te_re;
-      a_tm_re_new = a_tm_re_t[off] * r_tm_re - a_tm_im_t[off] * r_tm_im;
-      a_tm_im_new = a_tm_re_t[off] * r_tm_im + a_tm_im_t[off] * r_tm_re;
-      a_te_re_t[off] = a_te_re_new;
-      a_te_im_t[off] = a_te_im_new;
-      a_tm_re_t[off] = a_tm_re_new;
-      a_tm_im_t[off] = a_tm_im_new;
+      a_te_re_new = a_te_re_refl[off] * r_te_re - a_te_im_refl[off] * r_te_im;
+      a_te_im_new = a_te_re_refl[off] * r_te_im + a_te_im_refl[off] * r_te_re;
+      a_tm_re_new = a_tm_re_refl[off] * r_tm_re - a_tm_im_refl[off] * r_tm_im;
+      a_tm_im_new = a_tm_re_refl[off] * r_tm_im + a_tm_im_refl[off] * r_tm_re;
+      a_te_re_refl[off] = a_te_re_new;
+      a_te_im_refl[off] = a_te_im_new;
+      a_tm_re_refl[off] = a_tm_re_new;
+      a_tm_im_refl[off] = a_tm_im_new;
       /* Update the delay */
       tau_t[off] += t / SPEED_OF_LIGHT;
       /* Advance the ray to the hit point */
@@ -562,47 +548,40 @@ void compute_paths(
       /* Scatter a path from the hit point towards the rx */
       r.o = r_ptr->o;
       for (j = 0; j != num_rx; ++j) {
+        off_scat = i * num_rx * num_tx * num_paths + j * num_tx * num_paths + off;
         r.d = (Vec3){rx_positions[j * 3], rx_positions[j * 3 + 1], rx_positions[j * 3 + 2]};
         r.d = vec3_sub(&r.d, &r.o);
         ind = -1;
         moeller_trumbore(&r, &mesh, &t, &ind, &theta);
-        if (ind == -1) continue;
+        if (ind != -1 && t <= 1.f) {
+          /* An obstacle between the hit point and the rx has been hit */
+          a_te_re_scat[off_scat] = a_te_im_scat[off_scat] = a_tm_re_scat[off_scat]
+                                 = a_tm_im_scat[off_scat] = tau_scat[off_scat] = 0.f;
+          continue;
+        }
         /* No obstacle has been hit */
         /* Calculate the distance */
         t = sqrtf(vec3_dot(&r.d, &r.d));
         /* Calculate the delay */
-        tau[*num_paths_out] = tau_t[off] + t / SPEED_OF_LIGHT;
+        tau_scat[off_scat] = tau_t[off] + t / SPEED_OF_LIGHT;
         /* Calculate the free space loss */
         free_space_loss = free_space_loss_multiplier * t;
         free_space_loss = free_space_loss * free_space_loss;
         /* Set the gains */
-        a_te_re[*num_paths_out] = a_te_re_t[off] / free_space_loss;
-        a_te_im[*num_paths_out] = a_te_im_t[off] / free_space_loss;
-        a_tm_re[*num_paths_out] = a_tm_re_t[off] / free_space_loss;
-        a_tm_im[*num_paths_out] = a_tm_im_t[off] / free_space_loss;
-        /* Increment the number of paths */
-        ++(*num_paths_out);
-        /* Realloc the output arrays if needed */
-        if (*num_paths_out % num_paths_out_realloc_cap == 0) {
-          ++num_cur_allocs;
-          a_te_re = (float*)realloc(a_te_re, num_rx * num_tx * num_cur_allocs * num_paths_out_realloc_cap * sizeof(float));
-          a_te_im = (float*)realloc(a_te_im, num_rx * num_tx * num_cur_allocs * num_paths_out_realloc_cap * sizeof(float));
-          a_tm_re = (float*)realloc(a_tm_re, num_rx * num_tx * num_cur_allocs * num_paths_out_realloc_cap * sizeof(float));
-          a_tm_im = (float*)realloc(a_tm_im, num_rx * num_tx * num_cur_allocs * num_paths_out_realloc_cap * sizeof(float));
-          tau = (float*)realloc(tau, num_rx * num_tx * num_cur_allocs * num_paths_out_realloc_cap * sizeof(float));
-        }
+        a_te_re_scat[off_scat] = a_te_re_refl[off] / free_space_loss;
+        a_te_im_scat[off_scat] = a_te_im_refl[off] / free_space_loss;
+        a_tm_re_scat[off_scat] = a_tm_re_refl[off] / free_space_loss;
+        a_tm_im_scat[off_scat] = a_tm_im_refl[off] / free_space_loss;
       }
     }
   }
 
-  /* Realloc the output arrays to the actual number of paths */
-  a_te_re = (float*)realloc(a_te_re, num_rx * num_tx * *num_paths_out * sizeof(float));
-  a_te_im = (float*)realloc(a_te_im, num_rx * num_tx * *num_paths_out * sizeof(float));
-  a_tm_re = (float*)realloc(a_tm_re, num_rx * num_tx * *num_paths_out * sizeof(float));
-  a_tm_im = (float*)realloc(a_tm_im, num_rx * num_tx * *num_paths_out * sizeof(float));
-  tau = (float*)realloc(tau, num_rx * num_tx * *num_paths_out * sizeof(float));
-
   /* Free */
+  free(a_te_re_refl);
+  free(a_te_im_refl);
+  free(a_tm_re_refl);
+  free(a_tm_im_refl);
+  free(tau_t);
   free(h);
   free(active);
   free(rays);

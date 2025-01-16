@@ -16,38 +16,50 @@
  * \param rx_velocities receiver velocities, shape (num_rx, 3)
  * \param tx_velocities transmitter velocities, shape (num_tx, 3)
  * \param carrier_frequency carrier frequency in GHz. Must be > 0.0
- * \param sampling_frequency sampling frequency in Hz. Must be > 0.0
  * \param num_rx number of receivers. Must be > 0
  * \param num_tx number of transmitters. Must be > 0
  * \param num_paths number of paths to compute. Must be > 0
  * \param num_bounces number of bounces to compute. Must be > 0
- * \param num_samples number of samples in the original signal. Must be > 0
- * \param num_paths_out output number of paths computed. That includes LoS, scatter, and bounces that never left the scene.
- * \param a_te_re output array of real parts of transverse electric gains, shape (num_rx, num_tx, num_paths)
- * \param a_te_im output array of imaginary parts of transverse electric gains, shape (num_rx, num_tx, num_paths)
- * \param a_tm_re output array of real parts of transverse magnetic gains, shape (num_rx, num_tx, num_paths)
- * \param a_tm_im output array of imaginary parts of transverse magnetic gains, shape (num_rx, num_tx, num_paths)
- * \param tau output array of delays in seconds, shape (num_rx, num_tx, num_paths)
+ * 
+ * Outputs:
+ * 
+ * LoS:
+ * \param a_te_re_los output array of real parts of transverse electric gains for LoS, shape (num_rx, num_tx)
+ * \param a_te_im_los output array of imaginary parts of transverse electric gains for LoS, shape (num_rx, num_tx)
+ * \param a_tm_re_los output array of real parts of transverse magnetic gains for LoS, shape (num_rx, num_tx)
+ * \param a_tm_im_los output array of imaginary parts of transverse magnetic gains for LoS, shape (num_rx, num_tx)
+ * \param tau_los output array of delays for LoS in seconds, shape (num_rx, num_tx)
+ * 
+ * Scatter:
+ * \param a_te_re_scat output array of real parts of transverse electric gains for scatter, shape (num_bounces, num_rx, num_tx, num_paths)
+ * \param a_te_im_scat output array of imaginary parts of transverse electric gains for scatter, shape (num_bounces, num_rx, num_tx, num_paths)
+ * \param a_tm_re_scat output array of real parts of transverse magnetic gains for scatter, shape (num_bounces, num_rx, num_tx, num_paths)
+ * \param a_tm_im_scat output array of imaginary parts of transverse magnetic gains for scatter, shape (num_bounces, num_rx, num_tx, num_paths)
+ * \param tau_scat output array of delays for scatter in seconds, shape (num_bounces, num_rx, num_tx, num_paths)
 */
 void compute_paths(
-    IN const char *mesh_filepath,  /* path to the mesh file */
-    IN const float *rx_positions,  /* shape (num_rx, 3) */
-    IN const float *tx_positions,  /* shape (num_tx, 3) */
-    IN const float *rx_velocities, /* shape (num_rx, 3) */
-    IN const float *tx_velocities, /* shape (num_tx, 3) */
-    IN float carrier_frequency,    /* > 0.0 (IN GHz!) */
-    IN float sampling_frequency,   /* > 0.0 (IN Hz!) */
-    IN size_t num_rx,              /* number of receivers */
-    IN size_t num_tx,              /* number of transmitters */
-    IN size_t num_paths,           /* number of paths */
-    IN size_t num_bounces,         /* number of bounces */
-    IN size_t num_samples,         /* number of samples */
-    OUT size_t *num_paths_out,     /* number of paths computed */
-    OUT float *a_te_re,            /* output array real parts of TE gains (num_rx, num_tx, num_paths_out) */
-    OUT float *a_te_im,            /* output array imaginary parts of TE gains (num_rx, num_tx, num_paths_out) */
-    OUT float *a_tm_re,            /* output array real parts of TM gains (num_rx, num_tx, num_paths_out) */
-    OUT float *a_tm_im,            /* output array imaginary parts of TM gains (num_rx, num_tx, num_paths_out) */
-    OUT float *tau                 /* output array of delays (num_rx, num_tx, num_paths_out) */
+    IN const char *mesh_filepath,   /* path to the mesh file */
+    IN const float *rx_positions,   /* shape (num_rx, 3) */
+    IN const float *tx_positions,   /* shape (num_tx, 3) */
+    IN const float *rx_velocities,  /* shape (num_rx, 3) */
+    IN const float *tx_velocities,  /* shape (num_tx, 3) */
+    IN float carrier_frequency,     /* > 0.0 (IN GHz!) */
+    IN size_t num_rx,               /* number of receivers */
+    IN size_t num_tx,               /* number of transmitters */
+    IN size_t num_paths,            /* number of paths */
+    IN size_t num_bounces,          /* number of bounces */
+    /* LoS */
+    OUT float *a_te_re_los,         /* output array real parts of TE gains (num_rx, num_tx) */
+    OUT float *a_te_im_los,         /* output array imaginary parts of TE gains (num_rx, num_tx) */
+    OUT float *a_tm_re_los,         /* output array real parts of TM gains (num_rx, num_tx) */
+    OUT float *a_tm_im_los,         /* output array imaginary parts of TM gains (num_rx, num_tx) */
+    OUT float *tau_los,             /* output array of delays (num_rx, num_tx) */
+    /* Scatter */
+    OUT float *a_te_re_scat,        /* output array real parts of TE gains (num_bounces, num_rx, num_tx, num_paths) */
+    OUT float *a_te_im_scat,        /* output array imaginary parts of TE gains (num_bounces, num_rx, num_tx, num_paths) */
+    OUT float *a_tm_re_scat,        /* output array real parts of TM gains (num_bounces, num_rx, num_tx, num_paths) */
+    OUT float *a_tm_im_scat,        /* output array imaginary parts of TM gains (num_bounces, num_rx, num_tx, num_paths) */
+    OUT float *tau_scat            /* output array of delays (num_bounces, num_rx, num_tx, num_paths) */
 );
 
-#endif  /* COMPUTE_PATHS_H */
+#endif /* COMPUTE_PATHS_H */
