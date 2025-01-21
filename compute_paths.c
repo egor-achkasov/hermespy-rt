@@ -472,6 +472,11 @@ void compute_paths(
   float free_space_loss_multiplier = 2.f * PI * carrier_frequency * 1e9 / SPEED_OF_LIGHT;
   float free_space_loss;
 
+  /* Calculate LoS paths */
+
+  /* Consider imaginary parts of the LoS gains to be 0 in any way */
+  for (off = 0; off != num_rx * num_tx; ++off)
+    a_te_im_los[off] = a_tm_im_los[off] = 0.f;
   /* Calculate LoS paths directly from tx to rx */
   for (i = 0; i != num_rx; ++i)
     for (j = 0; j != num_tx; ++j) {
@@ -480,10 +485,11 @@ void compute_paths(
       ind = -1;
       r.o = tx_pos_v[j];
       r.d = vec3_sub(&rx_pos_v[i], &r.o);
+      /* Is there any abstacle between the tx and the rx? */
       moeller_trumbore(&r, &mesh, &t, &ind, &theta);
       if (ind != -1 && t <= 1.f) {
         /* An obstacle between the tx and the rx has been hit */
-        a_te_re_los[off] = a_te_im_los[off] = a_tm_re_los[off] = a_tm_im_los[off] = tau_los[off] = 0.f;
+        a_te_re_los[off] = a_tm_re_los[off] = tau_los[off] = 0.f;
         continue;
       }
       /* No triangle has been hit, the path is LoS */
@@ -491,10 +497,11 @@ void compute_paths(
       t = sqrtf(vec3_dot(&r.d, &r.d));
       /* Calculate the free space loss */
       free_space_loss = free_space_loss_multiplier * t;
-      free_space_loss = free_space_loss * free_space_loss;
-      /* Set the gains for this LoS path */
-      a_te_re_los[off] = a_tm_re_los[off] = 1.f / free_space_loss;
-      a_te_im_los[off] = a_tm_im_los[off] = 0.f;
+      if (free_space_loss > 1.f) {
+        a_te_re_los[off] = 1.f / free_space_loss;
+        a_tm_re_los[off] = 1.f / free_space_loss;
+      } else
+        a_te_re_los[off] = a_tm_re_los[off] = 1.f;
       /* Calculate the delay */
       tau_los[off] = t / SPEED_OF_LIGHT;
     }
@@ -529,11 +536,12 @@ void compute_paths(
                   &r_tm_re, &r_tm_im);
       /* Calculate the free space loss */
       free_space_loss = free_space_loss_multiplier * t;
-      free_space_loss = free_space_loss * free_space_loss;
-      r_te_re /= free_space_loss;
-      r_te_im /= free_space_loss;
-      r_tm_re /= free_space_loss;
-      r_tm_im /= free_space_loss;
+      if (free_space_loss > 1.f) {
+        r_te_re /= free_space_loss;
+        r_te_im /= free_space_loss;
+        r_tm_re /= free_space_loss;
+        r_tm_im /= free_space_loss;
+      }
       /* Update the gains */
       a_te_re_new = a_te_re_refl[off] * r_te_re - a_te_im_refl[off] * r_te_im;
       a_te_im_new = a_te_re_refl[off] * r_te_im + a_te_im_refl[off] * r_te_re;
@@ -562,18 +570,22 @@ void compute_paths(
           continue;
         }
         /* No obstacle has been hit */
+        a_te_re_scat[off_scat] = a_te_re_refl[off];
+        a_te_im_scat[off_scat] = a_te_im_refl[off];
+        a_tm_re_scat[off_scat] = a_tm_re_refl[off];
+        a_tm_im_scat[off_scat] = a_tm_im_refl[off];
         /* Calculate the distance */
         t = sqrtf(vec3_dot(&r.d, &r.d));
         /* Calculate the delay */
         tau_scat[off_scat] = tau_t[off] + t / SPEED_OF_LIGHT;
         /* Calculate the free space loss */
         free_space_loss = free_space_loss_multiplier * t;
-        free_space_loss = free_space_loss * free_space_loss;
-        /* Set the gains */
-        a_te_re_scat[off_scat] = a_te_re_refl[off] / free_space_loss;
-        a_te_im_scat[off_scat] = a_te_im_refl[off] / free_space_loss;
-        a_tm_re_scat[off_scat] = a_tm_re_refl[off] / free_space_loss;
-        a_tm_im_scat[off_scat] = a_tm_im_refl[off] / free_space_loss;
+        if (free_space_loss > 1.f) {
+          a_te_re_scat[off_scat] /= free_space_loss;
+          a_te_im_scat[off_scat] /= free_space_loss;
+          a_tm_re_scat[off_scat] /= free_space_loss;
+          a_tm_im_scat[off_scat] /= free_space_loss;
+        }
       }
     }
   }
