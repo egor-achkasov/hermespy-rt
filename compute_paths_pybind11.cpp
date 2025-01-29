@@ -12,6 +12,7 @@ extern "C" {
 namespace py = pybind11;
 
 std::tuple<
+  py::array_t<float>,                      // hit_points
   py::array_t<float>, py::array_t<float>,  // a_te_re_los, a_te_im_los
   py::array_t<float>, py::array_t<float>,  // a_tm_re_los, a_tm_im_los
   py::array_t<float>,                      // tau_los
@@ -38,6 +39,7 @@ compute_paths_wrapper(
     py::buffer_info tx_vel_info = tx_velocities.request();
 
     // Output
+    float *hit_points = new float[num_bounces * num_rx * num_tx * num_paths * 3];
     float *a_te_re_los = new float[num_rx * num_tx];
     float *a_te_im_los = new float[num_rx * num_tx];
     float *a_tm_re_los = new float[num_rx * num_tx];
@@ -61,6 +63,7 @@ compute_paths_wrapper(
         (size_t)num_tx,
         (size_t)num_paths,
         (size_t)num_bounces,
+        hit_points, // Hit points
         a_te_re_los, a_te_im_los, a_tm_re_los, a_tm_im_los, tau_los, // LoS outputs
         a_te_re_scat, a_te_im_scat, a_tm_re_scat, a_tm_im_scat, tau_scat  // Scatter outputs
     );
@@ -68,6 +71,7 @@ compute_paths_wrapper(
     // Convert output arrays into numpy arrays for easy use in Python
     // TODO prevent copying data
     // TODO construct np.complex64 array for a
+    py::array_t<float> hit_points_array = py::array_t<float>({num_bounces, num_rx, num_tx, num_paths, 3}, hit_points);
     py::array_t<float> a_te_re_los_array = py::array_t<float>({num_rx, num_tx}, a_te_re_los);
     py::array_t<float> a_te_im_los_array = py::array_t<float>({num_rx, num_tx}, a_te_im_los);
     py::array_t<float> a_tm_re_los_array = py::array_t<float>({num_rx, num_tx}, a_tm_re_los);
@@ -80,6 +84,7 @@ compute_paths_wrapper(
     py::array_t<float> tau_scat_array = py::array_t<float>({num_bounces, num_rx, num_tx, num_paths}, tau_scat);
 
     // Deallocate arrays
+    delete[] hit_points;
     delete[] a_te_re_los;
     delete[] a_te_im_los;
     delete[] a_tm_re_los;
@@ -93,6 +98,7 @@ compute_paths_wrapper(
 
     // Return the results as a tuple (gains, delays)
     return std::make_tuple(
+        hit_points_array,
         a_te_re_los_array, a_te_im_los_array,
         a_tm_re_los_array, a_tm_im_los_array,
         tau_los_array,
@@ -116,6 +122,7 @@ PYBIND11_MODULE(rt, m) {
           py::arg("num_bounces"));
 
     // Scene filepaths
+    // TODO
     m.def("get_scene_fp_box",
         []() { return __FILE__ + std::string("/scenes/box.ply"); }
     );

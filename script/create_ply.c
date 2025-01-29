@@ -1,13 +1,10 @@
 /* vim: set tabstop=2:softtabstop=2:shiftwidth=2:noexpandtab */
 
+#include "material.h" /* for Material */
+
 #include <stdio.h>
 #include <stdlib.h>
-
-typedef struct {
-  int name_size;
-  char *name;
-  float a, b, c, d;
-} Material;
+#include <stdint.h>
 
 typedef struct {
   unsigned int num_vertices;
@@ -16,7 +13,6 @@ typedef struct {
   int *faces;
 } Mesh;
   
-
 int main(int argc, char *argv[]) {
   if (argc < 3) {
     printf("Usage: %s <materials.bin> <path_to_mesh1.ply> [path_to_mesh2.ply] ...\n", argv[0]);
@@ -44,6 +40,8 @@ int main(int argc, char *argv[]) {
     fread(&materials[i].b, sizeof(float), 1, fp);
     fread(&materials[i].c, sizeof(float), 1, fp);
     fread(&materials[i].d, sizeof(float), 1, fp);
+    fread(&materials[i].s, sizeof(float), 1, fp);
+    fread(&materials[i].alpha, sizeof(uint8_t), 1, fp);
   }
   fclose(fp);
 
@@ -111,6 +109,8 @@ int main(int argc, char *argv[]) {
   fprintf(fp, "property float b\n");
   fprintf(fp, "property float c\n");
   fprintf(fp, "property float d\n");
+  fprintf(fp, "property float s\n");
+  fprintf(fp, "property char alpha\n");
   fprintf(fp, "element face %d\n", num_faces);
   fprintf(fp, "property list uchar uint vertex_index\n");
   fprintf(fp, "property uint material_index\n");
@@ -124,6 +124,8 @@ int main(int argc, char *argv[]) {
     fwrite(&materials[i].b, sizeof(float), 1, fp);
     fwrite(&materials[i].c, sizeof(float), 1, fp);
     fwrite(&materials[i].d, sizeof(float), 1, fp);
+    fwrite(&materials[i].s, sizeof(float), 1, fp);
+    fwrite(&materials[i].alpha, sizeof(uint8_t), 1, fp);
   }
   char n = 3;
   for (unsigned int j = 0; j != num_meshes; ++j)

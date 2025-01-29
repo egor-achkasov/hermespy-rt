@@ -23,6 +23,8 @@
  * 
  * Outputs:
  * 
+ * \param hit_points global cartesean coordinates of the hit points, shape (num_bounces, num_rx, num_tx, num_paths, 3)
+ * 
  * LoS:
  * \param a_te_re_los output array of real parts of transverse electric gains for LoS, shape (num_rx, num_tx)
  * \param a_te_im_los output array of imaginary parts of transverse electric gains for LoS, shape (num_rx, num_tx)
@@ -48,6 +50,7 @@ void compute_paths(
     IN size_t num_tx,               /* number of transmitters */
     IN size_t num_paths,            /* number of paths */
     IN size_t num_bounces,          /* number of bounces */
+    OUT float *hit_points,          /* bouncing hit points, shape (num_bounces, num_rx, num_tx, num_paths, 3) */
     /* LoS */
     OUT float *a_te_re_los,         /* output array real parts of TE gains (num_rx, num_tx) */
     OUT float *a_te_im_los,         /* output array imaginary parts of TE gains (num_rx, num_tx) */
@@ -59,7 +62,7 @@ void compute_paths(
     OUT float *a_te_im_scat,        /* output array imaginary parts of TE gains (num_bounces, num_rx, num_tx, num_paths) */
     OUT float *a_tm_re_scat,        /* output array real parts of TM gains (num_bounces, num_rx, num_tx, num_paths) */
     OUT float *a_tm_im_scat,        /* output array imaginary parts of TM gains (num_bounces, num_rx, num_tx, num_paths) */
-    OUT float *tau_scat            /* output array of delays (num_bounces, num_rx, num_tx, num_paths) */
+    OUT float *tau_scat             /* output array of delays (num_bounces, num_rx, num_tx, num_paths) */
 );
 
 #endif /* COMPUTE_PATHS_H */

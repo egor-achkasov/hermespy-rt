@@ -7,8 +7,118 @@
 #include <math.h>   /* for sin, cos, sqrt */
 #include <stdint.h> /* for int32_t, uint8_t */
 
+/* ==== CONSTANTS ==== */
+
 #define PI 3.14159265358979323846f /* pi */
 #define SPEED_OF_LIGHT 299792458.0f /* m/s */
+
+/* (2w, w) binomial coefficients for w = 0, 1, ..., 19 */
+const float BINOMIAL_2W_W[20] = {
+  1.f, 2.f, 6.f, 20.f, 70.f,
+  252.f, 924.f, 3432.f, 12870.f, 48620.f,
+  184756.f, 705432.f, 2704156.f, 10400600.f, 40116600.f,
+  155117520.f, 601080390.f, 2333606220.f, 9075135300.f, 35345263800.f
+};
+/* (aplha, k) binomial coefficients for alpha = 0, 1, ..., 19 with k = 0, 1, ..., alpha */
+const float* BINOMIAL_ALPHA_K[20] = {
+  (float[]){
+    1.f
+  },
+  (float[]){
+    1.f, 1.f
+  },
+  (float[]){
+    1.f, 2.f, 1.f
+  },
+  (float[]){
+    1.f, 3.f, 3.f, 1.f
+  },
+  (float[]){
+    1.f, 4.f, 6.f, 4.f, 1.f
+  },
+  (float[]){
+    1.f, 5.f, 10.f, 10.f, 5.f,
+    1.f
+  },
+  (float[]){
+    1.f, 6.f, 15.f, 20.f, 15.f,
+    6.f, 1.f
+  },
+  (float[]){
+    1.f, 7.f, 21.f, 35.f, 35.f,
+    21.f, 7.f, 1.f
+  },
+  (float[]){
+    1.f, 8.f, 28.f, 56.f, 70.f,
+    56.f, 28.f, 8.f, 1.f
+  },
+  (float[]){
+    1.f, 9.f, 36.f, 84.f, 126.f,
+    126.f, 84.f, 36.f, 9.f, 1.f
+  },
+  (float[]){
+    1.f, 10.f, 45.f, 120.f, 210.f,
+    252.f, 210.f, 120.f, 45.f, 10.f,
+    1.f
+  },
+  (float[]){
+    1.f, 11.f, 55.f, 165.f, 330.f,
+    462.f, 462.f, 330.f, 165.f, 55.f,
+    11.f, 1.f
+  },
+  (float[]){
+    1.f, 12.f, 66.f, 220.f, 495.f,
+    792.f, 924.f, 792.f, 495.f, 220.f,
+    66.f, 12.f, 1.f
+  },
+  (float[]){
+    1.f, 13.f, 78.f, 286.f,
+    715.f, 1287.f, 1716.f, 1716.f, 1287.f,
+    715.f, 286.f, 78.f, 13.f, 1.f
+  },
+  (float[]){
+    1.f, 14.f, 91.f, 364.f, 1001.f,
+    2002.f, 3003.f, 3432.f, 3003.f, 2002.f,
+    1001.f, 364.f, 91.f, 14.f, 1.f
+  },
+  (float[]){
+    1.f, 15.f, 105.f, 455.f, 1365.f,
+    3003.f, 5005.f, 6435.f, 6435.f, 5005.f,
+    3003.f, 1365.f, 455.f, 105.f, 15.f,
+    1.f
+  },
+  (float[]){
+    1.f, 16.f, 120.f, 560.f, 1820.f,
+    4368.f, 8008.f, 11440.f, 12870.f, 11440.f,
+    8008.f, 4368.f, 1820.f, 560.f, 120.f,
+    16.f, 1.f
+  },
+  (float[]){
+    1.f, 17.f, 136.f, 680.f, 2380.f,
+    6188.f, 12376.f, 19448.f, 24310.f, 24310.f,
+    19448.f, 12376.f, 6188.f, 2380.f, 680.f,
+    136.f, 17.f, 1.f
+  },
+  (float[]){
+    1.f, 18.f, 153.f, 816.f, 3060.f,
+    8568.f, 18564.f, 31824.f, 43758.f, 48620.f,
+    43758.f, 31824.f, 18564.f, 8568.f, 3060.f,
+    816.f, 153.f, 18.f, 1.f
+  },
+  (float[]){
+    1.f, 19.f, 171.f, 969.f, 3876.f,
+    11628.f, 27132.f, 50388.f, 75582.f, 92378.f,
+    92378.f, 75582.f, 50388.f, 27132.f, 11628.f,
+    3876.f, 969.f, 171.f, 19.f, 1.f
+  }
+};
+
+/* ==== PRECOMPUTED GLOBALS ==== */
+
+/* 4.f * PI * carrier_frequency * 1e9 / SPEED_OF_LIGHT */
+float g_free_space_loss_multiplier;
+
+/* ==== STRUCTS ==== */
 
 typedef struct {
   float x, y, z;
@@ -19,9 +129,14 @@ typedef struct {
 } Ray;
 
 typedef struct {
+  /* eta */
   float eta_re, eta_sqrt_re, eta_inv_re, eta_inv_sqrt_re;
   float eta_im, eta_sqrt_im, eta_inv_im, eta_inv_sqrt_im;
   float eta_abs, eta_abs_pow2, eta_abs_inv_sqrt;
+  /* scattering */
+  float s; /* scattering coefficient */
+  float r; /* reflection reduction factor (=sqrt(1-s^2)) */
+  float alpha; /* directive pattern lobe width parameter */
 } RadioMaterial;
 
 typedef struct {
@@ -123,6 +238,8 @@ Vec3 vec3_normalize(const Vec3 *a)
  * property float b
  * property float c
  * property float d
+ * property float s
+ * property char alpha
  * element face %d\n", num_faces);
  * property list uchar uint vertex_index
  * property uint material_index
@@ -180,6 +297,11 @@ Mesh load_mesh_ply(const char *mesh_filepath, float carrier_frequency)
   if (fread(buff, 1, 17*4, f) != 17*4) exit(8);
   if (strncmp(buff, "property float a\nproperty float b\nproperty float c\nproperty float d\n", 17*4))
     exit(8);
+  /* property float s */
+  /* property char alpha */
+  if (fread(buff, 1, 17*2+3, f) != 17*2+3) exit(8);
+  if (strncmp(buff, "property float s\nproperty char alpha\n", 17*2+3))
+    exit(8);
 
   /* element face <num_faces> */
   if (fgets(buff, 128, f) == NULL) exit(8);
@@ -214,18 +336,23 @@ Mesh load_mesh_ply(const char *mesh_filepath, float carrier_frequency)
       exit(8);
 
   /* RADIO_MATERIALS */
-  /* read a, b, c and d
+  /* read a, b, c, d, s, alpha
   and calculate relative permitivity */
   unsigned int name_size;
   float abcd[4];
   RadioMaterial *rm;
   for (size_t i = 0; i < num_materials; ++i) {
+    rm = &mesh.rms[i];
     /* skip name */
     if (fread(&name_size, sizeof(unsigned int), 1, f) != 1) exit(8);
     fseek(f, name_size, SEEK_CUR);
     /* read a, b, c and d */
     if (fread(abcd, sizeof(float)*4, 1, f) != 1) exit(8);
-    rm = &mesh.rms[i];
+    /* read s and alpha */
+    if (fread(&rm->s, sizeof(float), 1, f) != 1) exit(8);
+    if (fread(&rm->alpha, sizeof(uint8_t), 1, f) != 1) exit(8);
+    /* calculate r */
+    rm->r = sqrtf(1.f - rm->s * rm->s);
     /* calculate eta */
     rm->eta_re = abcd[0] * powf(carrier_frequency, abcd[1]);
     /* eq. 12 */
@@ -373,6 +500,58 @@ void refl_coefs(
         sqrt_eta_cos_theta1_re + cos_theta2_re,
         sqrt_eta_cos_theta1_im + cos_theta2_im,
         r_tm_re, r_tm_im);
+
+  /* Apply reflection reduction factor */
+  *r_te_re *= rm->r;
+  *r_te_im *= rm->r;
+  *r_tm_re *= rm->r;
+  *r_tm_im *= rm->r;
+}
+
+/** Calculate scattering coefficients.
+ * 
+ * Directive model pattern is used.
+ * 
+ * Implements eqs. TODO from doi 10.1109/TAP.2006.888422
+ * 
+ * \param theta_s scattering angle
+ * \param theta_i angle of incidence
+ * \param s scattering coefficient
+ * \param alpha directive pattern lobe width parameter
+ * \param a_te_re output real part of a_{eTE}
+ * \param a_te_im output imaginary part of a_{eTE}
+ * \param a_tm_re output real part of a_{eTM}
+ * \param a_tm_im output imaginary part of a_{eTM}
+ */
+void scat_coefs(
+  IN float theta_s,
+  IN float theta_i,
+  IN float s,
+  IN uint8_t alpha,
+  OUT float *a_te_re,
+  OUT float *a_te_im,
+  OUT float *a_tm_re,
+  OUT float *a_tm_im
+)
+{
+  float F_alpha = 0.f;
+  float theta_i_sin = sinf(theta_i);
+  float theta_i_cos = cosf(theta_i);
+  float f, I_k;
+  for (uint8_t k = 0; k <= alpha; ++k) {
+    if (k % 2) {
+      I_k = 0.f;
+      for (uint8_t w = 0; w <= (k-1)/2; ++w)
+        I_k += powf(theta_i_sin, 2*w) / powf(2.f, 2*w) * BINOMIAL_2W_W[w];
+      I_k *= theta_i_cos;
+    } else
+      I_k = 1.f;
+    I_k *= 2.f * PI / (k + 1);
+    F_alpha += BINOMIAL_ALPHA_K[alpha][k] * I_k;
+  }
+  F_alpha /= powf(2.f, alpha);
+  f = powf(.5f + theta_i_cos / 2.f, alpha) / F_alpha;
+  *a_te_re = *a_te_im = *a_tm_re = *a_tm_im = s * f;
 }
 
 /* ==== MAIN FUNCTION ==== */
@@ -388,6 +567,7 @@ void compute_paths(
   IN size_t num_tx,               /* number of transmitters */
   IN size_t num_paths,            /* number of paths */
   IN size_t num_bounces,          /* number of bounces */
+  OUT float *hit_points,          /* output array of hit points (num_rx, num_tx, num_paths, 3) */
   /* LoS */
   OUT float *a_te_re_los,         /* output array real parts of TE gains (num_rx, num_tx) */
   OUT float *a_te_im_los,         /* output array imaginary parts of TE gains (num_rx, num_tx) */
@@ -404,10 +584,14 @@ void compute_paths(
 {
   /* Init loop indices and offset variables */
   size_t i, j;
-  size_t off, off_scat;
+  size_t off, off_scat, off_hit_points;
 
   /* Load the scene */
   Mesh mesh = load_mesh_ply(mesh_filepath, carrier_frequency);
+
+  /* Precompute globals */
+  /* g_free_space_loss_multiplier */
+  g_free_space_loss_multiplier = 4.f * PI * carrier_frequency * 1e9 / SPEED_OF_LIGHT;
 
   /* Calculate a fibonacci sphere */
   Vec3 *ray_directions = (Vec3*)malloc(num_paths * sizeof(Vec3));
@@ -463,13 +647,15 @@ void compute_paths(
   /* Temporary variables */
   float t, r_te_re, r_te_im, r_tm_re, r_tm_im;
   float a_te_re_new, a_te_im_new, a_tm_re_new, a_tm_im_new;
+  float theta_s; /* scattering angle */
   int32_t ind;
-  Ray r, *r_ptr;
+  Ray r;
   Vec3 *h = (Vec3*)malloc(sizeof(Vec3));
+  Vec3 n;
 
   /* Friis free space loss multiplier.
   Multiply this by a distance and take the second power to get a free space loss. */
-  float free_space_loss_multiplier = 2.f * PI * carrier_frequency * 1e9 / SPEED_OF_LIGHT;
+  float free_space_loss_multiplier = 4.f * PI * carrier_frequency * 1e9 / SPEED_OF_LIGHT;
   float free_space_loss;
 
   /* Calculate LoS paths */
@@ -519,15 +705,16 @@ void compute_paths(
       /* Init */
       t = -1.f;
       ind = -1;
-      r_ptr = &rays[off];
       /* Find the hit point and trinagle.
       Calculate an angle of incidence */
-      moeller_trumbore(r_ptr, &mesh, &t, &ind, &theta);
+      moeller_trumbore(&rays[off], &mesh, &t, &ind, &theta);
       if (ind == -1) { /* Ray hit nothing */
         active[off / 8] &= ~(1 << (off % 8));
         --num_active;
         continue;
       }
+      /* Get the normal */
+      n = mesh.normals[ind];
       /* Calculate the reflection coefficients
       R_{eTE} and R_{eTM} */
       refl_coefs(&mesh.rms[mesh.rm_indices[ind]],
@@ -554,10 +741,18 @@ void compute_paths(
       /* Update the delay */
       tau_t[off] += t / SPEED_OF_LIGHT;
       /* Advance the ray to the hit point */
-      *h = vec3_scale(&r_ptr->d, t);
-      r_ptr->o = vec3_add(h, &r_ptr->o);
+      *h = vec3_scale(&rays[off].d, t);
+      rays[off].o = vec3_add(h, &rays[off].o);
+      /* Reflect the ray's direction */
+      t = vec3_dot(&rays[off].d, &n);
+      *h = vec3_scale(&n, 2.f * t);
+      rays[off].d = vec3_sub(&rays[off].d, h);
+      /* Advance the ray a bit to avoid self-intersection */
+      *h = vec3_scale(&rays[off].d, 1e-4f); 
+      rays[off].o = vec3_add(&rays[off].o, h);
+
       /* Scatter a path from the hit point towards the rx */
-      r.o = r_ptr->o;
+      r.o = rays[off].o;
       for (j = 0; j != num_rx; ++j) {
         off_scat = i * num_rx * num_tx * num_paths + j * num_tx * num_paths + off;
         r.d = vec3_sub(&rx_pos_v[j], &r.o);
@@ -570,10 +765,19 @@ void compute_paths(
           continue;
         }
         /* No obstacle has been hit */
-        a_te_re_scat[off_scat] = a_te_re_refl[off];
-        a_te_im_scat[off_scat] = a_te_im_refl[off];
-        a_tm_re_scat[off_scat] = a_tm_re_refl[off];
-        a_tm_im_scat[off_scat] = a_tm_im_refl[off];
+        /* Save the hit point coordinates */
+        off_hit_points = off_scat * 3;
+        hit_points[off_hit_points] = r.o.x;
+        hit_points[off_hit_points + 1] = r.o.y;
+        hit_points[off_hit_points + 2] = r.o.z;
+        /* Calculate the scattering angle */
+        theta_s = acosf(vec3_dot(&r.d, &n) / sqrtf(vec3_dot(&r.d, &r.d)));
+        /* Calculate the scattering coefficients */
+        scat_coefs(theta_s, theta,
+                    mesh.rms[mesh.rm_indices[ind]].s,
+                    mesh.rms[mesh.rm_indices[ind]].alpha,
+                    &a_te_re_new, &a_te_im_new,
+                    &a_tm_re_new, &a_tm_im_new);
         /* Calculate the distance */
         t = sqrtf(vec3_dot(&r.d, &r.d));
         /* Calculate the delay */

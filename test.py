@@ -15,7 +15,7 @@ num_paths = 10000
 num_bounces = 3
 
 # Call compute_paths
-a_te_re_los, a_te_im_los, a_tm_re_los, a_tm_im_los, tau_los, a_te_re_scat, a_te_im_scat, a_tm_re_scat, a_tm_im_scat, tau_scat = compute_paths(
+output = compute_paths(
     mesh_filepath,
     rx_positions,
     tx_positions,
@@ -27,30 +27,35 @@ a_te_re_los, a_te_im_los, a_tm_re_los, a_tm_im_los, tau_los, a_te_re_scat, a_te_
     num_paths,
     num_bounces
 )
+hit_points = output[0]
+a_te_los = output[1] + 1.j*output[2]
+a_tm_los = output[3] + 1.j*output[4]
+tau_los = output[5]
+a_te_scat = output[6] + 1.j*output[7]
+a_tm_scat = output[8] + 1.j*output[9]
+tau_scat = output[10]
 
 print("#####################")
 print("LoS:")
 print("#####################")
-print(f"shape(a_te_re_los): {a_te_re_los.shape}")
-print(f"TE Gains: {a_te_re_los + 1.j*a_te_im_los}")
-print(f"TM Gains: {a_tm_re_los + 1.j*a_tm_im_los}")
+print(f"shape(a_te_los): {a_te_los.shape}")
 print(f"Delays: {tau_los}")
-print(f"a_te_re_los min, max: {np.min(a_te_re_los)}, {np.max(a_te_re_los)}")
-print(f"a_te_im_los min, max: {np.min(a_te_im_los)}, {np.max(a_te_im_los)}")
-print(f"a_tm_re_los min, max: {np.min(a_tm_re_los)}, {np.max(a_tm_re_los)}")
-print(f"a_tm_im_los min, max: {np.min(a_tm_im_los)}, {np.max(a_tm_im_los)}")
+print(f"a_te_los.real min, max: {np.min(a_te_los.real)}, {np.max(a_te_los.real)}")
+print(f"a_te_los.imag min, max: {np.min(a_te_los.imag)}, {np.max(a_te_los.imag)}")
+print(f"a_tm_los.real min, max: {np.min(a_tm_los.real)}, {np.max(a_tm_los.real)}")
+print(f"a_tm_los.imag min, max: {np.min(a_tm_los.imag)}, {np.max(a_tm_los.imag)}")
 
 print("\n#####################")
 print("Scatter:")
 print("#####################")
-print(f"shape(a_te_re_scat): {a_te_re_scat.shape}")
-print(f"TE Gains: {a_te_re_scat + 1.j*a_te_im_scat}")
-print(f"TM Gains: {a_tm_re_scat + 1.j*a_tm_im_scat}")
+print(f"shape(a_te_scat): {a_te_scat.shape}")
 print(f"Delays: {tau_scat}")
-print(f"a_te_re_scat min, max: {np.min(a_te_re_scat)}, {np.max(a_te_re_scat)}")
-print(f"a_te_im_scat min, max: {np.min(a_te_im_scat)}, {np.max(a_te_im_scat)}")
-print(f"a_tm_re_scat min, max: {np.min(a_tm_re_scat)}, {np.max(a_tm_re_scat)}")
-print(f"a_tm_im_scat min, max: {np.min(a_tm_im_scat)}, {np.max(a_tm_im_scat)}")
+print(f"a_te_scat.real min, max: {np.min(a_te_scat.real)}, {np.max(a_te_scat.real)}")
+print(f"a_te_scat.imag min, max: {np.min(a_te_scat.imag)}, {np.max(a_te_scat.imag)}")
+print(f"a_tm_scat.real min, max: {np.min(a_tm_scat.real)}, {np.max(a_tm_scat.real)}")
+print(f"a_tm_scat.imag min, max: {np.min(a_tm_scat.imag)}, {np.max(a_tm_scat.imag)}")
 
-assert a_te_re_los.shape == a_te_im_los.shape == a_tm_re_los.shape == a_tm_im_los.shape == tau_los.shape
-assert a_te_re_scat.shape == a_te_im_scat.shape == a_tm_re_scat.shape == a_tm_im_scat.shape == tau_scat.shape
+# Asssert shapes
+assert hit_points.shape == (num_bounces, num_rx, num_tx, num_paths, 3)
+assert a_te_los.shape == a_tm_los.shape == tau_los.shape == (num_rx, num_tx)
+assert a_te_scat.shape == a_tm_scat.shape == tau_scat.shape == (num_bounces, num_rx, num_tx, num_paths)
