@@ -11,11 +11,20 @@ extern "C" {
 
 namespace py = pybind11;
 
+// Helper function to create a numpy array from a C array
+py::array_t<float> make_py_array(std::vector<size_t> shape, float *data) {
+    return py::array_t<float>(
+        //shape, data, py::capsule(data, [](float *ptr) { delete[] ptr; })
+        shape, data
+    );
+}
+
 std::tuple<
-  py::array_t<float>,                      // hit_points
+  py::array_t<float>,                      // directions_los
   py::array_t<float>, py::array_t<float>,  // a_te_re_los, a_te_im_los
   py::array_t<float>, py::array_t<float>,  // a_tm_re_los, a_tm_im_los
   py::array_t<float>,                      // tau_los
+  py::array_t<float>,                      // directions_scat
   py::array_t<float>, py::array_t<float>,  // a_te_re_scat, a_te_im_scat
   py::array_t<float>, py::array_t<float>,  // a_tm_re_scat, a_tm_im_scat
   py::array_t<float>                       // tau_scat
@@ -39,12 +48,13 @@ compute_paths_wrapper(
     py::buffer_info tx_vel_info = tx_velocities.request();
 
     // Output
-    float *hit_points = new float[num_bounces * num_rx * num_tx * num_paths * 3];
+    float *directions_los = new float[num_rx * num_tx * 3];
     float *a_te_re_los = new float[num_rx * num_tx];
     float *a_te_im_los = new float[num_rx * num_tx];
     float *a_tm_re_los = new float[num_rx * num_tx];
     float *a_tm_im_los = new float[num_rx * num_tx];
     float *tau_los = new float[num_rx * num_tx];
+    float *directions_scat = new float[num_rx * num_tx * num_paths * 3];
     float *a_te_re_scat = new float[num_bounces * num_rx * num_tx * num_paths];
     float *a_te_im_scat = new float[num_bounces * num_rx * num_tx * num_paths];
     float *a_tm_re_scat = new float[num_bounces * num_rx * num_tx * num_paths];
@@ -63,48 +73,36 @@ compute_paths_wrapper(
         (size_t)num_tx,
         (size_t)num_paths,
         (size_t)num_bounces,
-        hit_points, // Hit points
-        a_te_re_los, a_te_im_los, a_tm_re_los, a_tm_im_los, tau_los, // LoS outputs
-        a_te_re_scat, a_te_im_scat, a_tm_re_scat, a_tm_im_scat, tau_scat  // Scatter outputs
+        // LoS outputs
+        directions_los,
+        a_te_re_los,
+        a_te_im_los,
+        a_tm_re_los,
+        a_tm_im_los,
+        tau_los,
+        // Scatter outputs
+        directions_scat,
+        a_te_re_scat,
+        a_te_im_scat,
+        a_tm_re_scat,
+        a_tm_im_scat,
+        tau_scat
     );
 
-    // Convert output arrays into numpy arrays for easy use in Python
-    // TODO prevent copying data
-    // TODO construct np.complex64 array for a
-    py::array_t<float> hit_points_array = py::array_t<float>({num_bounces, num_rx, num_tx, num_paths, 3}, hit_points);
-    py::array_t<float> a_te_re_los_array = py::array_t<float>({num_rx, num_tx}, a_te_re_los);
-    py::array_t<float> a_te_im_los_array = py::array_t<float>({num_rx, num_tx}, a_te_im_los);
-    py::array_t<float> a_tm_re_los_array = py::array_t<float>({num_rx, num_tx}, a_tm_re_los);
-    py::array_t<float> a_tm_im_los_array = py::array_t<float>({num_rx, num_tx}, a_tm_im_los);
-    py::array_t<float> tau_los_array = py::array_t<float>({num_rx, num_tx}, tau_los);
-    py::array_t<float> a_te_re_scat_array = py::array_t<float>({num_bounces, num_rx, num_tx, num_paths}, a_te_re_scat);
-    py::array_t<float> a_te_im_scat_array = py::array_t<float>({num_bounces, num_rx, num_tx, num_paths}, a_te_im_scat);
-    py::array_t<float> a_tm_re_scat_array = py::array_t<float>({num_bounces, num_rx, num_tx, num_paths}, a_tm_re_scat);
-    py::array_t<float> a_tm_im_scat_array = py::array_t<float>({num_bounces, num_rx, num_tx, num_paths}, a_tm_im_scat);
-    py::array_t<float> tau_scat_array = py::array_t<float>({num_bounces, num_rx, num_tx, num_paths}, tau_scat);
-
-    // Deallocate arrays
-    delete[] hit_points;
-    delete[] a_te_re_los;
-    delete[] a_te_im_los;
-    delete[] a_tm_re_los;
-    delete[] a_tm_im_los;
-    delete[] tau_los;
-    delete[] a_te_re_scat;
-    delete[] a_te_im_scat;
-    delete[] a_tm_re_scat;
-    delete[] a_tm_im_scat;
-    delete[] tau_scat;
-
-    // Return the results as a tuple (gains, delays)
+    // Cast to numpy arrays and return
     return std::make_tuple(
-        hit_points_array,
-        a_te_re_los_array, a_te_im_los_array,
-        a_tm_re_los_array, a_tm_im_los_array,
-        tau_los_array,
-        a_te_re_scat_array, a_te_im_scat_array,
-        a_tm_re_scat_array, a_tm_im_scat_array,
-        tau_scat_array
+      make_py_array({num_rx, num_tx, 3}, directions_los),
+      make_py_array({num_rx, num_tx}, a_te_re_los),
+      make_py_array({num_rx, num_tx}, a_te_im_los),
+      make_py_array({num_rx, num_tx}, a_tm_re_los),
+      make_py_array({num_rx, num_tx}, a_tm_im_los),
+      make_py_array({num_rx, num_tx}, tau_los),
+      make_py_array({num_rx, num_tx, num_paths, 3}, directions_scat),
+      make_py_array({num_bounces, num_rx, num_tx, num_paths}, a_te_re_scat),
+      make_py_array({num_bounces, num_rx, num_tx, num_paths}, a_te_im_scat),
+      make_py_array({num_bounces, num_rx, num_tx, num_paths}, a_tm_re_scat),
+      make_py_array({num_bounces, num_rx, num_tx, num_paths}, a_tm_im_scat),
+      make_py_array({num_bounces, num_rx, num_tx, num_paths}, tau_scat)
     );
 }
 
