@@ -1,4 +1,5 @@
-#include "compute_paths.h"
+#include "compute_paths.h" /* for compute_paths */
+#include "scene.h" /* for HRT_Scene, HRT_mesh, HRT_Material */
 
 #include <stddef.h> /* for size_t */
 #include <stdlib.h> /* for exit, malloc, free */
@@ -113,11 +114,6 @@ const float* BINOMIAL_ALPHA_K[20] = {
   }
 };
 
-/* ==== PRECOMPUTED GLOBALS ==== */
-
-/* 4.f * PI * carrier_frequency * 1e9 / SPEED_OF_LIGHT */
-float g_free_space_loss_multiplier;
-
 /* ==== STRUCTS ==== */
 
 typedef struct {
@@ -128,35 +124,38 @@ typedef struct {
   Vec3 o, d;
 } Ray;
 
+/* Radio material eta and additional parameters */
 typedef struct {
   /* eta */
   float eta_re, eta_sqrt_re, eta_inv_re, eta_inv_sqrt_re;
   float eta_im, eta_sqrt_im, eta_inv_im, eta_inv_sqrt_im;
   float eta_abs, eta_abs_pow2, eta_abs_inv_sqrt;
-  /* scattering */
-  float s; /* scattering coefficient */
-  float r; /* reflection reduction factor (=sqrt(1-s^2)) */
-  float alpha; /* directive pattern lobe width parameter */
-} RadioMaterial;
+  /* r = 1.0 - s */
+  float r;
+} Material;
 
 typedef struct {
-  Vec3 *vertices;
-  size_t num_vertices;
-  RadioMaterial *rms;
-  size_t num_rms;
-  int32_t *indices;
-  int32_t *rm_indices;
-  size_t num_indices;
-  Vec3 *normals;
+  uint32_t num_vertices;
+  Vec3 *vs;
+  uint32_t num_triangles;
+  uint32_t *is;
+  /* Normals. Size [num_triangles] */
+  Vec3 *ns;
+  uint32_t material_index;
 } Mesh;
-void free_mesh(Mesh *mesh)
-{
-  free(mesh->vertices);
-  free(mesh->rms);
-  free(mesh->indices);
-  free(mesh->rm_indices);
-  free(mesh->normals);
-}
+
+typedef struct {
+  uint32_t num_meshes;
+  Mesh *meshes;
+} Scene;
+
+/* ==== PRECOMPUTED GLOBALS ==== */
+
+/* 4.f * PI * carrier_frequency * 1e9 / SPEED_OF_LIGHT */
+float g_free_space_loss_multiplier;
+
+/* Materials etas, calucalted for the given carrier_frequency */
+Material g_materials[NUM_G_MATERIALS];
 
 /* ==== COMPLEX OPERATIONS ==== */
 
@@ -222,179 +221,94 @@ Vec3 vec3_normalize(const Vec3 *a)
   return (Vec3){a->x / norm, a->y / norm, a->z / norm};
 }
 
-/* ==== MESH LOADING ==== */
+/* ==== SCENE LOADING ==== */
 
-/** Load a mesh from a PLY file.
+/** Load a mesh from a HRT file.
  * 
- * ply
- * format binary_little_endian 1.0
- * element vertex %d\n", num_vertices);
- * property float x
- * property float y
- * property float z
- * element radio_material %d\n", num_materials);
- * property list uint char name
- * property float a
- * property float b
- * property float c
- * property float d
- * property float s
- * property char alpha
- * element face %d\n", num_faces);
- * property list uchar uint vertex_index
- * property uint material_index
- * end_header
- * 
- * All the faces must be triangles.
- * 
- * \param mesh_filepath path to the PLY file
+ * \param scene_filepath path to the HRT file
  * \param carrier_frequency the carrier frequency in GHz
- * \return the loaded mesh
+ * \return the loaded scene
  */
-Mesh load_mesh_ply(const char *mesh_filepath, float carrier_frequency)
+Scene load_scene(const char *scene_filepath, float carrier_frequency)
 {
-  FILE *f = fopen(mesh_filepath, "rb");
+  /* Open the HRT file */
+  FILE *f = fopen(scene_filepath, "rb");
   if (!f) {
-    fprintf(stderr, "Could not open file %s\n", mesh_filepath);
+    fprintf(stderr, "Could not open file %s\n", scene_filepath);
     exit(8);
   }
 
-  char buff[128];
-  size_t num_vertices = 0;
-  size_t num_faces = 0;
-  size_t num_materials = 0;
-
-  /* HEADER */
-  /* ply */
-  if (fread(buff, 1, 4, f) != 4) exit(8);
-  if (strncmp(buff, "ply\n", 4)) exit(8);
-  /* format binary_little_endian 1.0 */
-  if (fread(buff, 1, 32, f) != 32) exit(8);
-  if (strncmp(buff, "format binary_little_endian 1.0\n", 32)) exit(8);
-
-  /* element vertex <num_vertices> */
-  if (fgets(buff, 128, f) == NULL) exit(8);
-  if (strncmp(buff, "element vertex ", 15)) exit(8);
-  sscanf(buff, "element vertex %zu", &num_vertices);
-  /* property float x */
-  /* property float y */
-  /* property float z */
-  if (fread(buff, 1, 17*3, f) != 17*3) exit(8);
-  if (strncmp(buff, "property float x\nproperty float y\nproperty float z\n", 17*3))
-    exit(8);
-
-  /* element radio_material */
-  if (fgets(buff, 128, f) == NULL) exit(8);
-  if (strncmp(buff, "element radio_material ", 23)) exit(8);
-  sscanf(buff, "element radio_material %zu", &num_materials);
-  /* property list uint char name */
-  if (fread(buff, 1, 29, f) != 29) exit(8);
-  if (strncmp(buff, "property list uint char name\n", 29)) exit(8);
-  /* property float a */
-  /* property float b */
-  /* property float c */
-  /* property float d */
-  if (fread(buff, 1, 17*4, f) != 17*4) exit(8);
-  if (strncmp(buff, "property float a\nproperty float b\nproperty float c\nproperty float d\n", 17*4))
-    exit(8);
-  /* property float s */
-  /* property char alpha */
-  if (fread(buff, 1, 17*2+3, f) != 17*2+3) exit(8);
-  if (strncmp(buff, "property float s\nproperty char alpha\n", 17*2+3))
-    exit(8);
-
-  /* element face <num_faces> */
-  if (fgets(buff, 128, f) == NULL) exit(8);
-  if (strncmp(buff, "element face ", 13)) exit(8);
-  sscanf(buff, "element face %zu", &num_faces);
-  /* property list uchar int vertex_index */
-  if (fread(buff, 1, 38, f) != 38) exit(8);
-  if (strncmp(buff, "property list uchar uint vertex_index\n", 38))
-    exit(8);
-  /* property uint material_index */
-  if (fread(buff, 1, 29, f) != 29) exit(8);
-  if (strncmp(buff, "property uint material_index\n", 29)) exit(8);
-
-  /* end_header */
-  if (fread(buff, 1, 11, f) != 11) exit(8);
-  if (strncmp(buff, "end_header\n", 11)) exit(8);
-
-  /* Init mesh */
-  Mesh mesh;
-  mesh.num_vertices = num_vertices;
-  mesh.num_rms = num_materials;
-  mesh.num_indices = num_faces * 3;
-  mesh.vertices = (Vec3*)malloc(num_vertices * sizeof(Vec3));
-  mesh.rms = (RadioMaterial*)malloc(num_materials * sizeof(RadioMaterial));
-  mesh.indices = (int32_t*)malloc(mesh.num_indices * sizeof(int32_t));
-  mesh.rm_indices = (int32_t*)malloc(num_faces * sizeof(int32_t));
-  mesh.normals = (Vec3*)malloc(num_faces * sizeof(Vec3));
-
-  /* VERTICES */
-  for (size_t i = 0; i < mesh.num_vertices; ++i)
-    if (fread(&mesh.vertices[i], sizeof(Vec3), 1, f) != 1)
-      exit(8);
-
-  /* RADIO_MATERIALS */
-  /* read a, b, c, d, s, alpha
-  and calculate relative permitivity */
-  unsigned int name_size;
-  float abcd[4];
-  RadioMaterial *rm;
-  for (size_t i = 0; i < num_materials; ++i) {
-    rm = &mesh.rms[i];
-    /* skip name */
-    if (fread(&name_size, sizeof(unsigned int), 1, f) != 1) exit(8);
-    fseek(f, name_size, SEEK_CUR);
-    /* read a, b, c and d */
-    if (fread(abcd, sizeof(float)*4, 1, f) != 1) exit(8);
-    /* read s and alpha */
-    if (fread(&rm->s, sizeof(float), 1, f) != 1) exit(8);
-    if (fread(&rm->alpha, sizeof(uint8_t), 1, f) != 1) exit(8);
-    /* calculate r */
-    rm->r = sqrtf(1.f - rm->s * rm->s);
-    /* calculate eta */
-    rm->eta_re = abcd[0] * powf(carrier_frequency, abcd[1]);
-    /* eq. 12 */
-    rm->eta_im = (abcd[2] * powf(carrier_frequency, abcd[3]))
-               / (0.0556325027352135f * carrier_frequency);
-    rm->eta_abs_pow2 = rm->eta_re * rm->eta_re + rm->eta_im * rm->eta_im;
-    rm->eta_abs = sqrtf(rm->eta_abs_pow2);
-    rm->eta_abs_inv_sqrt = 1.f / sqrtf(rm->eta_abs);
-    /* calculate sqrt(eta) */
-    csqrtf(rm->eta_re, rm->eta_im, rm->eta_abs, &rm->eta_sqrt_re, &rm->eta_sqrt_im);
-    /* calculate 1 / eta */
-    rm->eta_inv_re = rm->eta_re / rm->eta_abs_pow2;
-    rm->eta_inv_im = -rm->eta_im / rm->eta_abs_pow2;
-    /* calculate 1 / sqrt(eta) */
-    csqrtf(rm->eta_inv_re, rm->eta_inv_im, 1.f / rm->eta_abs,
-          &rm->eta_inv_sqrt_re, &rm->eta_inv_sqrt_im);
+  /* Parse the file */
+  /* MAGIC */
+  char magic[3];
+  fread(magic, 1, 3, f);
+  if (strncmp(magic, "HRT", 3)) exit(8);
+  /* SCENE */
+  Scene scene;
+  /* num_meshes */
+  fread(&scene.num_meshes, sizeof(uint32_t), 1, f);
+  /* meshes */
+  scene.meshes = (Mesh*)malloc(scene.num_meshes * sizeof(Mesh));
+  for (uint32_t i = 0; i != scene.num_meshes; ++i) {
+    /* MESH */
+    Mesh *mesh = &scene.meshes[i];
+    /* num_vertices */
+    fread(&mesh->num_vertices, sizeof(uint32_t), 1, f);
+    /* vertices */
+    mesh->vs = (Vec3*)malloc(mesh->num_vertices * sizeof(Vec3));
+    fread(mesh->vs, sizeof(Vec3), mesh->num_vertices, f);
+    /* num_triangles */
+    fread(&mesh->num_triangles, sizeof(uint32_t), 1, f);
+    /* triangles */
+    mesh->is = (uint32_t*)malloc(mesh->num_triangles * 3 * sizeof(uint32_t));
+    fread(mesh->is, sizeof(uint32_t), mesh->num_triangles * 3, f);
+    /* material_index */
+    fread(&mesh->material_index, sizeof(uint32_t), 1, f);
   }
-
-  /* INDICES */
-  /* also calculate normals */
-  uint8_t n;
-  Vec3 *v1, *v2, *v3, u, v;
-  for (size_t i = 0; i < mesh.num_indices; i += 3) {
-    if (fread(&n, 1, 1, f) != 1) exit(8);
-    if (n != 3) {
-      fprintf(stderr, "Only trianglar faces are supported\n");
-      exit(8);
-    }
-    if (fread(&mesh.indices[i], sizeof(int32_t), 3, f) != 3) exit(8);
-    if (fread(&mesh.rm_indices[i / 3], sizeof(int32_t), 1, f) != 1) exit(8);
-    /* calculate normal */
-    v1 = &mesh.vertices[mesh.indices[i]];
-    v2 = &mesh.vertices[mesh.indices[i + 1]];
-    v3 = &mesh.vertices[mesh.indices[i + 2]];
-    u = vec3_sub(v2, v1);
-    v = vec3_sub(v3, v1);
-    mesh.normals[i / 3] = vec3_cross(&u, &v);
-    mesh.normals[i / 3] = vec3_normalize(&mesh.normals[i / 3]);
-  }
-
   fclose(f);
-  return mesh;
+
+  /* Precompute material permitivity */
+  uint8_t material_eta_isdone[NUM_G_MATERIALS] = {0};
+  for (uint32_t i = 0; i != scene.num_meshes; ++i)
+    if (!material_eta_isdone[scene.meshes[i].material_index]) {
+      HRT_Material *hrt_mat = &g_hrt_materials[scene.meshes[i].material_index];
+      Material *rm = &g_materials[scene.meshes[i].material_index];
+      /* calculate eta */
+      rm->eta_re = hrt_mat->a * powf(carrier_frequency, hrt_mat->b);
+      /* eq. 12 */
+      rm->eta_im = (hrt_mat->c * powf(carrier_frequency, hrt_mat->d))
+                 / (0.0556325027352135f * carrier_frequency);
+      rm->eta_abs_pow2 = rm->eta_re * rm->eta_re + rm->eta_im * rm->eta_im;
+      rm->eta_abs = sqrtf(rm->eta_abs_pow2);
+      rm->eta_abs_inv_sqrt = 1.f / sqrtf(rm->eta_abs);
+      /* calculate sqrt(eta) */
+      csqrtf(rm->eta_re, rm->eta_im, rm->eta_abs, &rm->eta_sqrt_re, &rm->eta_sqrt_im);
+      /* calculate 1 / eta */
+      rm->eta_inv_re = rm->eta_re / rm->eta_abs_pow2;
+      rm->eta_inv_im = -rm->eta_im / rm->eta_abs_pow2;
+      /* calculate 1 / sqrt(eta) */
+      csqrtf(rm->eta_inv_re, rm->eta_inv_im, 1.f / rm->eta_abs,
+            &rm->eta_inv_sqrt_re, &rm->eta_inv_sqrt_im);
+      /* calculate r */
+      rm->r = 1.f - hrt_mat->s;
+    }
+
+  /* Calculate normals */
+  for (uint32_t i = 0; i != scene.num_meshes; ++i) {
+    Mesh *mesh = &scene.meshes[i];
+    mesh->ns = (Vec3*)malloc(mesh->num_triangles * sizeof(Vec3));
+    for (uint32_t j = 0; j != mesh->num_triangles; ++j) {
+      Vec3 v1 = mesh->vs[mesh->is[j * 3]];
+      Vec3 v2 = mesh->vs[mesh->is[j * 3 + 1]];
+      Vec3 v3 = mesh->vs[mesh->is[j * 3 + 2]];
+      Vec3 e1 = vec3_sub(&v2, &v1);
+      Vec3 e2 = vec3_sub(&v3, &v1);
+      mesh->ns[j] = vec3_cross(&e1, &e2);
+      mesh->ns[j] = vec3_normalize(&mesh->ns[j]);
+    }
+  }
+
+  return scene;
 }
 
 /* ==== RT ==== */
@@ -402,16 +316,18 @@ Mesh load_mesh_ply(const char *mesh_filepath, float carrier_frequency)
 /** Compute Moeleer-Trumbore intersection algorithm.
  * 
  * \param ray ray to cast to the mesh
- * \param mesh triangle mesh
+ * \param scene the scene to cast the ray to
  * \param t output distance to the hit point. If no hit, t is not modified.
- * \param ind output index of the hit triangle. If no hit, i is not modified.
+ * \param mesh_ind output index of the hit mesh. If no hit, i is not modified.
+ * \param face_ind output index of the hit triangle. If no hit, i is not modified.
  * \param theta output angle of incidence
  */
 void moeller_trumbore(
   IN Ray *ray,
-  IN Mesh *mesh,
+  IN Scene *scene,
   OUT float *t,
-  OUT int32_t *ind,
+  OUT uint32_t *mesh_ind,
+  OUT uint32_t *face_ind,
   OUT float *theta
 )
 {
@@ -421,33 +337,37 @@ void moeller_trumbore(
   float d, u, v;
   float dist = 1e9;
   float dist_tmp;
-  for (size_t i = 0; i < mesh->num_indices; i += 3) {
-    v1 = mesh->vertices[mesh->indices[i]];
-    v2 = mesh->vertices[mesh->indices[i + 1]];
-    v3 = mesh->vertices[mesh->indices[i + 2]];
-    e1 = vec3_sub(&v2, &v1);
-    e2 = vec3_sub(&v3, &v1);
-    re2_cross = vec3_cross(&ray->d, &e2);
-    d = vec3_dot(&e1, &re2_cross);
-    if (d > -__FLT_EPSILON__ && d < __FLT_EPSILON__) continue;
-    s = vec3_sub(&ray->o, &v1);
-    u = vec3_dot(&s, &re2_cross) / d;
-    if ((u < 0. && fabs(u) > __FLT_EPSILON__)
-    || (u > 1. && fabs(u - 1.) > __FLT_EPSILON__))
-      continue;
-    se1_cross = vec3_cross(&s, &e1);
-    v = vec3_dot(&ray->d, &se1_cross) / d;
-    if ((v < 0. && fabs(v) > __FLT_EPSILON__)
-    || (u + v > 1. && fabs(u + v - 1.) > __FLT_EPSILON__))
-      continue;
-    dist_tmp = vec3_dot(&e2, &se1_cross) / d;
-    if (dist_tmp > __FLT_EPSILON__ && dist_tmp < dist) {
-      dist = dist_tmp;
-      *t = dist;
-      *ind = i / 3;
-      *theta = acos(vec3_dot(&mesh->normals[i / 3], &ray->d));
-      if (*theta > PI / 2.)
-        *theta = PI - *theta;
+  for (uint32_t i = 0; i != scene->num_meshes; ++i) {
+    Mesh *mesh = &scene->meshes[i];
+    for (uint32_t j = 0; j != mesh->num_triangles; ++j) {
+      v1 = mesh->vs[mesh->is[3 * j]];
+      v2 = mesh->vs[mesh->is[3 * j + 1]];
+      v3 = mesh->vs[mesh->is[3 * j + 2]];
+      e1 = vec3_sub(&v2, &v1);
+      e2 = vec3_sub(&v3, &v1);
+      re2_cross = vec3_cross(&ray->d, &e2);
+      d = vec3_dot(&e1, &re2_cross);
+      if (d > -__FLT_EPSILON__ && d < __FLT_EPSILON__) continue;
+      s = vec3_sub(&ray->o, &v1);
+      u = vec3_dot(&s, &re2_cross) / d;
+      if ((u < 0. && fabs(u) > __FLT_EPSILON__)
+      || (u > 1. && fabs(u - 1.) > __FLT_EPSILON__))
+        continue;
+      se1_cross = vec3_cross(&s, &e1);
+      v = vec3_dot(&ray->d, &se1_cross) / d;
+      if ((v < 0. && fabs(v) > __FLT_EPSILON__)
+      || (u + v > 1. && fabs(u + v - 1.) > __FLT_EPSILON__))
+        continue;
+      dist_tmp = vec3_dot(&e2, &se1_cross) / d;
+      if (dist_tmp > __FLT_EPSILON__ && dist_tmp < dist) {
+        dist = dist_tmp;
+        *t = dist;
+        *mesh_ind = i;
+        *face_ind = j;
+        *theta = acos(vec3_dot(&mesh->ns[j], &ray->d));
+        if (*theta > PI / 2.)
+          *theta = PI - *theta;
+      }
     }
   }
 }
@@ -456,7 +376,7 @@ void moeller_trumbore(
  * 
  * Implements eqs. (31a)-(31b) from ITU-R P.2040-3.
  * 
- * \param rm the radio material of the hit triangle
+ * \param material_index the index of the material
  * \param theta1 the angle of incidence
  * \param r_te_re output real part of R_{eTE}
  * \param r_te_im output imaginary part of R_{eTE}
@@ -464,7 +384,7 @@ void moeller_trumbore(
  * \param r_tm_im output imaginary part of R_{eTM}
  */
 void refl_coefs(
-  IN RadioMaterial *rm,
+  IN uint32_t material_index,
   IN float theta1,
   OUT float *r_te_re,
   OUT float *r_te_im,
@@ -472,6 +392,7 @@ void refl_coefs(
   OUT float *r_tm_im
 )
 {
+  Material *rm = &g_materials[material_index];
   float sin_theta1 = sinf(theta1);
   if (rm->eta_abs_inv_sqrt * sin_theta1 > 1.f - __FLT_EPSILON__) {
     *r_te_re = *r_tm_re = 1.f;
@@ -510,14 +431,11 @@ void refl_coefs(
 
 /** Calculate scattering coefficients.
  * 
- * Directive model pattern is used.
- * 
  * Implements eqs. TODO from doi 10.1109/TAP.2006.888422
  * 
  * \param theta_s scattering angle
  * \param theta_i angle of incidence
- * \param s scattering coefficient
- * \param alpha directive pattern lobe width parameter
+ * \param material_index the index of the material
  * \param a_te_re output real part of a_{eTE}
  * \param a_te_im output imaginary part of a_{eTE}
  * \param a_tm_re output real part of a_{eTM}
@@ -526,8 +444,7 @@ void refl_coefs(
 void scat_coefs(
   IN float theta_s,
   IN float theta_i,
-  IN float s,
-  IN uint8_t alpha,
+  IN uint32_t material_index,
   OUT float *a_te_re,
   OUT float *a_te_im,
   OUT float *a_tm_re,
@@ -538,7 +455,9 @@ void scat_coefs(
   float theta_i_sin = sinf(theta_i);
   float theta_i_cos = cosf(theta_i);
   float f, I_k;
-  for (uint8_t k = 0; k <= alpha; ++k) {
+  /* Directive model pattern */
+  HRT_Material *hrt_mat = &g_hrt_materials[material_index];
+  for (uint8_t k = 0; k <= hrt_mat->s1_alpha; ++k) {
     if (k % 2) {
       I_k = 0.f;
       for (uint8_t w = 0; w <= (k-1)/2; ++w)
@@ -547,17 +466,18 @@ void scat_coefs(
     } else
       I_k = 1.f;
     I_k *= 2.f * PI / (k + 1);
-    F_alpha += BINOMIAL_ALPHA_K[alpha][k] * I_k;
+    F_alpha += BINOMIAL_ALPHA_K[hrt_mat->s1_alpha][k] * I_k;
   }
-  F_alpha /= powf(2.f, alpha);
-  f = powf(.5f + theta_i_cos / 2.f, alpha) / F_alpha;
-  *a_te_re = *a_te_im = *a_tm_re = *a_tm_im = s * f;
+  F_alpha /= powf(2.f, hrt_mat->s1_alpha);
+  f = powf(.5f + theta_i_cos / 2.f, hrt_mat->s1_alpha) / F_alpha;
+  *a_te_re = *a_te_im = *a_tm_re = *a_tm_im = hrt_mat->s * f;
+  /* TODO add s2 and s3 */
 }
 
 /* ==== MAIN FUNCTION ==== */
 
 void compute_paths(
-  IN const char *mesh_filepath,   /* path to the mesh file */
+  IN const char *scene_filepath,  /* path to the scene file */
   IN const float *rx_pos,         /* shape (num_rx, 3) */
   IN const float *tx_pos,         /* shape (num_tx, 3) */
   IN const float *rx_vel,         /* shape (num_rx, 3) */
@@ -588,7 +508,7 @@ void compute_paths(
   size_t off, off_scat;
 
   /* Load the scene */
-  Mesh mesh = load_mesh_ply(mesh_filepath, carrier_frequency);
+  Scene scene = load_scene(scene_filepath, carrier_frequency);
 
   /* Precompute globals */
   /* g_free_space_loss_multiplier */
@@ -649,7 +569,7 @@ void compute_paths(
   float t, r_te_re, r_te_im, r_tm_re, r_tm_im;
   float a_te_re_new, a_te_im_new, a_tm_re_new, a_tm_im_new;
   float theta_s; /* scattering angle */
-  int32_t ind;
+  uint32_t mesh_ind, face_ind;
   Ray r;
   Vec3 *h = (Vec3*)malloc(sizeof(Vec3));
   Vec3 n;
@@ -672,7 +592,7 @@ void compute_paths(
     for (j = 0; j != num_tx; ++j) {
       off = i * num_tx + j;
       t = -1.f;
-      ind = -1;
+      mesh_ind = face_ind = -1;
 
       /* Create a ray from the tx to the rx */
       r.o = tx_pos_v[j];
@@ -692,8 +612,8 @@ void compute_paths(
       }
 
       /* Is there any abstacle between the tx and the rx? */
-      moeller_trumbore(&r, &mesh, &t, &ind, &theta);
-      if (ind != -1 && t <= 1.f) {
+      moeller_trumbore(&r, &scene, &t, &mesh_ind, &face_ind, &theta);
+      if (mesh_ind != -1 && t <= 1.f) {
         /* An obstacle between the tx and the rx has been hit */
         a_te_re_los[off] = a_tm_re_los[off] = tau_los[off] = 0.f;
         continue;
@@ -737,18 +657,16 @@ void compute_paths(
         continue;
       /* Init */
       t = -1.f;
-      ind = -1;
+      mesh_ind = face_ind = -1;
       /* Find the hit point and trinagle and the angle of incidence */
-      moeller_trumbore(&rays[off], &mesh, &t, &ind, &theta);
-      if (ind == -1) { /* Ray hit nothing */
+      moeller_trumbore(&rays[off], &scene, &t, &mesh_ind, &face_ind, &theta);
+      if (mesh_ind == -1) { /* Ray hit nothing */
         active[off / 8] &= ~(1 << (off % 8));
         --num_active;
         continue;
       }
-      /* Get the hit primitive's normal */
-      n = mesh.normals[ind];
       /* Calculate the reflection coefficients R_{eTE} and R_{eTM} */
-      refl_coefs(&mesh.rms[mesh.rm_indices[ind]],
+      refl_coefs(scene.meshes[mesh_ind].material_index,
                  theta,
                  &r_te_re, &r_te_im,
                  &r_tm_re, &r_tm_im);
@@ -778,6 +696,7 @@ void compute_paths(
       *h = vec3_scale(&r.d, t);
       r.o = vec3_add(h, &r.o);
       /* Reflect the ray's direction as d' = d - 2*(d \cdot n)*n */
+      n = scene.meshes[mesh_ind].ns[face_ind];
       t = vec3_dot(&r.d, &n);
       *h = vec3_scale(&n, 2.f * t);
       r.d = vec3_sub(&r.d, h);
@@ -796,9 +715,9 @@ void compute_paths(
         off_scat = i * num_rx * num_tx * num_paths + j * num_tx * num_paths + off;
         r.d = vec3_sub(&rx_pos_v[j], &r.o);
         r.d = vec3_normalize(&r.d);
-        ind = -1;
-        moeller_trumbore(&r, &mesh, &t, &ind, &theta);
-        if (ind != -1 && t <= 1.f) {
+        mesh_ind = face_ind = -1;
+        moeller_trumbore(&r, &scene, &t, &mesh_ind, &face_ind, &theta);
+        if (mesh_ind != -1 && t <= 1.f) {
           /* An obstacle between the hit point and the rx has been hit */
           a_te_re_scat[off_scat] = a_te_im_scat[off_scat] = a_tm_re_scat[off_scat]
                                  = a_tm_im_scat[off_scat] = tau_scat[off_scat] = 0.f;
@@ -812,11 +731,9 @@ void compute_paths(
         /* Calculate the scattering angle */
         theta_s = acosf(vec3_dot(&r.d, &n) / sqrtf(vec3_dot(&r.d, &r.d)));
         /* Calculate the scattering coefficients */
-        scat_coefs(theta_s, theta,
-                    mesh.rms[mesh.rm_indices[ind]].s,
-                    mesh.rms[mesh.rm_indices[ind]].alpha,
-                    &a_te_re_new, &a_te_im_new,
-                    &a_tm_re_new, &a_tm_im_new);
+        scat_coefs(theta_s, theta, scene.meshes[mesh_ind].material_index,
+                   &a_te_re_new, &a_te_im_new,
+                   &a_tm_re_new, &a_tm_im_new);
         /* Calculate the distance */
         t = sqrtf(vec3_dot(&r.d, &r.d));
         /* Calculate the delay */
@@ -847,5 +764,6 @@ void compute_paths(
   free(h);
   free(active);
   free(rays);
-  free_mesh(&mesh);
+  /* Free the scene */
+  /* TODO */
 }

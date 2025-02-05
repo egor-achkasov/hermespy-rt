@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from rt import compute_paths
 
 # Define inputs
-mesh_filepath = __file__[:__file__.rfind('/') + 1] + 'scenes/box.ply'
+mesh_filepath = __file__[:__file__.rfind('/') + 1] + 'scenes/box.hrt'
 rx_positions = np.array([[0., 0., 2.5]], dtype=np.float64)
 tx_positions = np.array([[0., 0., 2.51]], dtype=np.float64)
 rx_velocities = np.array([[0., 0., 0.]], dtype=np.float64)

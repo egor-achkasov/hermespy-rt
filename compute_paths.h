@@ -6,11 +6,14 @@
 #define IN
 #define OUT
 
-/** Compute gains and delays between in a Mitsuba scene.
+/** Compute gains and delays between tx and rx in a 3D scene.
  * 
- * Scene must be defined in a specific PLY format. See README for details.
+ * Scene must be defined in a specific format.
+ * The format is defined in scene.h.
+ * The HRT is a binary file cointaining a dereferenced Scene structure.
+ * See README for details.
  * 
- * \param mesh_filepath path to a mesh .ply file
+ * \param scene_filepath path to a scene .hrt file
  * \param rx_pos receiver positions, shape (num_rx, 3)
  * \param tx_pos transmitter positions, shape (num_tx, 3)
  * \param rx_vel receiver velocities, shape (num_rx, 3)
@@ -40,7 +43,7 @@
  * \param tau_scat output array of delays for scatter in seconds, shape (num_bounces, num_rx, num_tx, num_paths)
 */
 void compute_paths(
-    IN const char *mesh_filepath,   /* path to the mesh file */
+    IN const char *scene_filepath,   /* path to the scene file */
     IN const float *rx_pos,         /* shape (num_rx, 3) */
     IN const float *tx_pos,         /* shape (num_tx, 3) */
     IN const float *rx_vel,         /* shape (num_rx, 3) */
