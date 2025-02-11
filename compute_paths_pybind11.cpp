@@ -97,7 +97,7 @@ compute_paths_wrapper(
       make_py_array({num_rx, num_tx}, a_tm_re_los),
       make_py_array({num_rx, num_tx}, a_tm_im_los),
       make_py_array({num_rx, num_tx}, tau_los),
-      make_py_array({num_rx, num_tx, num_paths, 3}, directions_scat),
+      make_py_array({num_bounces, num_rx, num_tx, num_paths, 3}, directions_scat),
       make_py_array({num_bounces, num_rx, num_tx, num_paths}, a_te_re_scat),
       make_py_array({num_bounces, num_rx, num_tx, num_paths}, a_te_im_scat),
       make_py_array({num_bounces, num_rx, num_tx, num_paths}, a_tm_re_scat),
