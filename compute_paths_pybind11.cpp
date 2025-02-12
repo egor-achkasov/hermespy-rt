@@ -36,10 +36,10 @@ compute_paths_wrapper(
     py::array_t<float> rx_velocities,
     py::array_t<float> tx_velocities,
     float carrier_frequency,
-    int num_rx,
-    int num_tx,
-    int num_paths,
-    int num_bounces
+    unsigned long int num_rx,
+    unsigned long int num_tx,
+    unsigned long int num_paths,
+    unsigned long int num_bounces
 ) {
     // Prepare input arrays (this is a basic implementation, check shapes and memory layout)
     py::buffer_info rx_pos_info = rx_positions.request();

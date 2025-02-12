@@ -29,7 +29,7 @@ typedef struct {
   /* Number of characters in the name */
   uint32_t name_sz;
   /* Name of the material. Not null-terminated. */
-  char *name;
+  const char *name;
   /* Relative permitivity and conductivity properties.
    * Refer to ITU-R P.2040-3 Table 3.
    */

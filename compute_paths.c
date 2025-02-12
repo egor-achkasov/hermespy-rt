@@ -241,29 +241,31 @@ Scene load_scene(const char *scene_filepath, float carrier_frequency)
   /* Parse the file */
   /* MAGIC */
   char magic[3];
-  fread(magic, 1, 3, f);
+  if (fread(magic, 1, 3, f) != 3) exit(8);
   if (strncmp(magic, "HRT", 3)) exit(8);
   /* SCENE */
   Scene scene;
   /* num_meshes */
-  fread(&scene.num_meshes, sizeof(uint32_t), 1, f);
+  if (fread(&scene.num_meshes, sizeof(uint32_t), 1, f) != 1) exit(8);
   /* meshes */
   scene.meshes = (Mesh*)malloc(scene.num_meshes * sizeof(Mesh));
   for (uint32_t i = 0; i != scene.num_meshes; ++i) {
     /* MESH */
     Mesh *mesh = &scene.meshes[i];
     /* num_vertices */
-    fread(&mesh->num_vertices, sizeof(uint32_t), 1, f);
+    if(fread(&mesh->num_vertices, sizeof(uint32_t), 1, f) != 1) exit(8);
     /* vertices */
     mesh->vs = (Vec3*)malloc(mesh->num_vertices * sizeof(Vec3));
-    fread(mesh->vs, sizeof(Vec3), mesh->num_vertices, f);
+    if (fread(mesh->vs, sizeof(Vec3), mesh->num_vertices, f) != mesh->num_vertices)
+      exit(8);
     /* num_triangles */
-    fread(&mesh->num_triangles, sizeof(uint32_t), 1, f);
+    if (fread(&mesh->num_triangles, sizeof(uint32_t), 1, f) != 1) exit(8);
     /* triangles */
     mesh->is = (uint32_t*)malloc(mesh->num_triangles * 3 * sizeof(uint32_t));
-    fread(mesh->is, sizeof(uint32_t), mesh->num_triangles * 3, f);
+    if (fread(mesh->is, sizeof(uint32_t), mesh->num_triangles * 3, f) != mesh->num_triangles * 3)
+      exit(8);
     /* material_index */
-    fread(&mesh->material_index, sizeof(uint32_t), 1, f);
+    if (fread(&mesh->material_index, sizeof(uint32_t), 1, f) != 1) exit(8);
   }
   fclose(f);
 
@@ -606,7 +608,7 @@ void compute_paths(
 
       /* Is there any abstacle between the tx and the rx? */
       moeller_trumbore(&r, &scene, &t, &mesh_ind, &face_ind, &theta);
-      if (mesh_ind != -1 && t <= 1.f) {
+      if (mesh_ind != (uint32_t)-1 && t <= 1.f) {
         /* An obstacle between the tx and the rx has been hit */
         a_te_re_los[off] = a_tm_re_los[off] = tau_los[off] = 0.f;
         continue;
@@ -663,7 +665,7 @@ void compute_paths(
         mesh_ind = face_ind = -1;
         /* Find the hit point and trinagle and the angle of incidence */
         moeller_trumbore(&rays[off_tx_path], &scene, &t, &mesh_ind, &face_ind, &theta);
-        if (mesh_ind == -1) { /* Ray hit nothing */
+        if (mesh_ind == (uint32_t)-1) { /* Ray hit nothing */
           active[active_byte_index] &= ~(1 << active_bit_pos);
           --num_active;
           continue;
@@ -720,7 +722,7 @@ void compute_paths(
           r.d = vec3_normalize(&r.d);
           mesh_ind = face_ind = -1;
           moeller_trumbore(&r, &scene, &t, &mesh_ind, &face_ind, &theta);
-          if (mesh_ind != -1 && t <= 1.f) {
+          if (mesh_ind != (uint32_t)-1 && t <= 1.f) {
             /* An obstacle between the hit point and the rx has been hit */
             a_te_re_scat[off_scat] = a_te_im_scat[off_scat] = a_tm_re_scat[off_scat]
                                   = a_tm_im_scat[off_scat] = tau_scat[off_scat] = 0.f;
