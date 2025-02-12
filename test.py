@@ -59,5 +59,7 @@ print(f"a_tm_scat.real min, max: {np.min(a_tm_scat.real)}, {np.max(a_tm_scat.rea
 print(f"a_tm_scat.imag min, max: {np.min(a_tm_scat.imag)}, {np.max(a_tm_scat.imag)}")
 
 # Asssert shapes
+assert directions_los.shape == (num_rx, num_tx, 3)
+assert directions_scat.shape == (num_rx, num_tx, num_bounces * num_paths, 3)
 assert a_te_los.shape == a_tm_los.shape == tau_los.shape == (num_rx, num_tx)
-assert a_te_scat.shape == a_tm_scat.shape == tau_scat.shape == (num_bounces, num_rx, num_tx, num_paths)
+assert a_te_scat.shape == a_tm_scat.shape == tau_scat.shape == (num_rx, num_tx, num_bounces * num_paths)

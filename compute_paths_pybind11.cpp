@@ -54,12 +54,12 @@ compute_paths_wrapper(
     float *a_tm_re_los = new float[num_rx * num_tx];
     float *a_tm_im_los = new float[num_rx * num_tx];
     float *tau_los = new float[num_rx * num_tx];
-    float *directions_scat = new float[num_rx * num_tx * num_paths * 3];
-    float *a_te_re_scat = new float[num_bounces * num_rx * num_tx * num_paths];
-    float *a_te_im_scat = new float[num_bounces * num_rx * num_tx * num_paths];
-    float *a_tm_re_scat = new float[num_bounces * num_rx * num_tx * num_paths];
-    float *a_tm_im_scat = new float[num_bounces * num_rx * num_tx * num_paths];
-    float *tau_scat = new float[num_bounces * num_rx * num_tx * num_paths];
+    float *directions_scat = new float[num_rx * num_tx * num_bounces * num_paths * 3];
+    float *a_te_re_scat = new float[num_rx * num_tx * num_bounces * num_paths];
+    float *a_te_im_scat = new float[num_rx * num_tx * num_bounces * num_paths];
+    float *a_tm_re_scat = new float[num_rx * num_tx * num_bounces * num_paths];
+    float *a_tm_im_scat = new float[num_rx * num_tx * num_bounces * num_paths];
+    float *tau_scat = new float[num_rx * num_tx * num_bounces * num_paths];
 
     // Call the C function
     compute_paths(
@@ -97,12 +97,12 @@ compute_paths_wrapper(
       make_py_array({num_rx, num_tx}, a_tm_re_los),
       make_py_array({num_rx, num_tx}, a_tm_im_los),
       make_py_array({num_rx, num_tx}, tau_los),
-      make_py_array({num_bounces, num_rx, num_tx, num_paths, 3}, directions_scat),
-      make_py_array({num_bounces, num_rx, num_tx, num_paths}, a_te_re_scat),
-      make_py_array({num_bounces, num_rx, num_tx, num_paths}, a_te_im_scat),
-      make_py_array({num_bounces, num_rx, num_tx, num_paths}, a_tm_re_scat),
-      make_py_array({num_bounces, num_rx, num_tx, num_paths}, a_tm_im_scat),
-      make_py_array({num_bounces, num_rx, num_tx, num_paths}, tau_scat)
+      make_py_array({num_rx, num_tx, num_bounces * num_paths, 3}, directions_scat),
+      make_py_array({num_rx, num_tx, num_bounces * num_paths}, a_te_re_scat),
+      make_py_array({num_rx, num_tx, num_bounces * num_paths}, a_te_im_scat),
+      make_py_array({num_rx, num_tx, num_bounces * num_paths}, a_tm_re_scat),
+      make_py_array({num_rx, num_tx, num_bounces * num_paths}, a_tm_im_scat),
+      make_py_array({num_rx, num_tx, num_bounces * num_paths}, tau_scat)
     );
 }
 

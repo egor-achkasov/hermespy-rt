@@ -496,17 +496,13 @@ void compute_paths(
   OUT float *tau_los,             /* output array of delays (num_rx, num_tx) */
   /* Scatter */
   OUT float *directions_scat,     /* output array of directions (num_rx, num_tx, num_paths, 3) */
-  OUT float *a_te_re_scat,        /* output array real parts of TE gains (num_bounces, num_rx, num_tx, num_paths) */
-  OUT float *a_te_im_scat,        /* output array imaginary parts of TE gains (num_bounces, num_rx, num_tx, num_paths) */
-  OUT float *a_tm_re_scat,        /* output array real parts of TM gains (num_bounces, num_rx, num_tx, num_paths) */
-  OUT float *a_tm_im_scat,        /* output array imaginary parts of TM gains (num_bounces, num_rx, num_tx, num_paths) */
-  OUT float *tau_scat             /* output array of delays (num_bounces, num_rx, num_tx, num_paths) */
+  OUT float *a_te_re_scat,        /* output array real parts of TE gains (num_rx, num_tx, num_bounces * num_paths) */
+  OUT float *a_te_im_scat,        /* output array imaginary parts of TE gains (num_rx, num_tx, num_bounces * num_paths) */
+  OUT float *a_tm_re_scat,        /* output array real parts of TM gains (num_rx, num_tx, num_bounces * num_paths) */
+  OUT float *a_tm_im_scat,        /* output array imaginary parts of TM gains (num_rx, num_tx, num_bounces * num_paths) */
+  OUT float *tau_scat             /* output array of delays (num_rx, num_tx, num_bounces * num_paths) */
 )
 {
-  /* Init loop indices and offset variables */
-  size_t i, j;
-  size_t off, off_scat;
-
   /* Load the scene */
   Scene scene = load_scene(scene_filepath, carrier_frequency);
 
@@ -517,11 +513,11 @@ void compute_paths(
   /* Calculate a fibonacci sphere */
   Vec3 *ray_directions = (Vec3*)malloc(num_paths * sizeof(Vec3));
   float k, phi, theta;
-  for (i = 0; i < num_paths; ++i) {
-    k = (float)i + .5f;
+  for (size_t path = 0; path < num_paths; ++path) {
+    k = (float)path + .5f;
     phi = acos(1.f - 2.f * k / num_paths);
     theta = PI * (1.f + sqrtf(5.f)) * k;
-    ray_directions[i] = (Vec3){
+    ray_directions[path] = (Vec3){
       cos(theta) * sin(phi),
       sin(theta) * sin(phi),
       cos(phi)
@@ -537,12 +533,10 @@ void compute_paths(
   /* Create num_path rays for each tx */
   /* Shape (num_tx, num_paths) */
   Ray *rays = (Ray*)malloc(num_tx * num_paths * sizeof(Ray));
-  off = 0;
-  for (i = 0; i < num_tx; ++i) {
-    for (j = 0; j < num_paths; ++j) {
-      rays[off].o = tx_pos_v[i];
-      rays[off].d = ray_directions[j];
-      ++off;
+  for (size_t tx = 0, off = 0; tx < num_tx; ++tx) {
+    for (size_t path = 0; path < num_paths; ++path, ++off) {
+      rays[off].o = tx_pos_v[tx];
+      rays[off].d = ray_directions[path];
     }
   }
   free(ray_directions);
@@ -584,19 +578,18 @@ void compute_paths(
   /***************************************************************************/
 
   /* Consider imaginary parts of the LoS gains to be 0 in any way */
-  for (off = 0; off != num_rx * num_tx; ++off)
+  for (size_t off = 0; off != num_rx * num_tx; ++off)
     a_te_im_los[off] = a_tm_im_los[off] = 0.f;
 
   /* Calculate LoS paths directly from tx to rx */
-  for (i = 0; i != num_rx; ++i)
-    for (j = 0; j != num_tx; ++j) {
-      off = i * num_tx + j;
+  for (size_t rx = 0, off = 0; rx != num_rx; ++rx)
+    for (size_t tx = 0; tx != num_tx; ++tx, ++off) {
       t = -1.f;
       mesh_ind = face_ind = -1;
 
       /* Create a ray from the tx to the rx */
-      r.o = tx_pos_v[j];
-      r.d = vec3_sub(&rx_pos_v[i], &r.o);
+      r.o = tx_pos_v[tx];
+      r.d = vec3_sub(&rx_pos_v[rx], &r.o);
 
       /* In case the tx and the rx are at the same position */
       if (vec3_dot(&r.d, &r.d) < __FLT_EPSILON__) {
@@ -647,111 +640,121 @@ void compute_paths(
   * - Spawn scattering rays towards the rx
   * - TODO Spawn refraction rays with gains as per eqs. (31c)-(31d) from ITU-R P.2040-3
   */
-  for (i = 0; i < num_bounces; ++i) {
-    for (off = 0; off != num_tx * num_paths; ++off) {
-      /***********************************************************************/
-      /*                          Reflect the rays                           */
-      /***********************************************************************/
-      /* Check if the ray is active */
-      if (!(active[off / 8] & (1 << (off % 8))))
-        continue;
-      /* Init */
-      t = -1.f;
-      mesh_ind = face_ind = -1;
-      /* Find the hit point and trinagle and the angle of incidence */
-      moeller_trumbore(&rays[off], &scene, &t, &mesh_ind, &face_ind, &theta);
-      if (mesh_ind == -1) { /* Ray hit nothing */
-        active[off / 8] &= ~(1 << (off % 8));
-        --num_active;
-        continue;
-      }
-      /* Calculate the reflection coefficients R_{eTE} and R_{eTM} */
-      refl_coefs(scene.meshes[mesh_ind].material_index,
-                 theta,
-                 &r_te_re, &r_te_im,
-                 &r_tm_re, &r_tm_im);
-      /* Calculate the free space loss */
-      free_space_loss = free_space_loss_multiplier * t;
-      if (free_space_loss > 1.f) {
-        r_te_re /= free_space_loss;
-        r_te_im /= free_space_loss;
-        r_tm_re /= free_space_loss;
-        r_tm_im /= free_space_loss;
-      }
-      /* Update the gains as a' = a * refl_coefs */
-      a_te_re_new = a_te_re_refl[off] * r_te_re - a_te_im_refl[off] * r_te_im;
-      a_te_im_new = a_te_re_refl[off] * r_te_im + a_te_im_refl[off] * r_te_re;
-      a_tm_re_new = a_tm_re_refl[off] * r_tm_re - a_tm_im_refl[off] * r_tm_im;
-      a_tm_im_new = a_tm_re_refl[off] * r_tm_im + a_tm_im_refl[off] * r_tm_re;
-      a_te_re_refl[off] = a_te_re_new;
-      a_te_im_refl[off] = a_te_im_new;
-      a_tm_re_refl[off] = a_tm_re_new;
-      a_tm_im_refl[off] = a_tm_im_new;
-      /* Update the delay */
-      tau_t[off] += t / SPEED_OF_LIGHT;
+  for (size_t bounce = 0; bounce < num_bounces; ++bounce) {
+    size_t active_byte_index = 0, active_bit_pos = 0; /* active[active_byte_index] & (1 << active_bit_pos) */
+    size_t off_tx_path = 0; /* tx * num_paths + path */
+    for (size_t tx = 0; tx < num_tx; ++tx)
+      for (size_t path = 0; path < num_paths; ++path, ++off_tx_path) {
 
-      /* Move and reflect the ray */
-      r = rays[off];
-      /* Advance the ray to the hit point */
-      *h = vec3_scale(&r.d, t);
-      r.o = vec3_add(h, &r.o);
-      /* Reflect the ray's direction as d' = d - 2*(d \cdot n)*n */
-      n = scene.meshes[mesh_ind].ns[face_ind];
-      t = vec3_dot(&r.d, &n);
-      *h = vec3_scale(&n, 2.f * t);
-      r.d = vec3_sub(&r.d, h);
-      /* Advance the ray origin a bit to avoid intersection with the same triangle */
-      *h = vec3_scale(&r.d, 1e-4f); 
-      r.o = vec3_add(&r.o, h);
-      /* Save the reflected ray */
-      rays[off] = r;
+        /* Check if the ray is active */
+        if (active_bit_pos == 8) {
+          active_bit_pos = 0;
+          ++active_byte_index;
+        }
+        if (!(active[active_byte_index] & (1 << active_bit_pos)))
+          continue;
 
-      /***********************************************************************/
-      /*                          Scatter the rays                           */
-      /***********************************************************************/
+        /***********************************************************************/
+        /*                          Reflect the rays                           */
+        /***********************************************************************/
 
-      /* Scatter a path from the hit point towards the rx */
-      for (j = 0; j != num_rx; ++j) {
-        off_scat = i * num_rx * num_tx * num_paths + j * num_tx * num_paths + off;
-        r.d = vec3_sub(&rx_pos_v[j], &r.o);
-        r.d = vec3_normalize(&r.d);
+        /* Init */
+        t = -1.f;
         mesh_ind = face_ind = -1;
-        moeller_trumbore(&r, &scene, &t, &mesh_ind, &face_ind, &theta);
-        if (mesh_ind != -1 && t <= 1.f) {
-          /* An obstacle between the hit point and the rx has been hit */
-          a_te_re_scat[off_scat] = a_te_im_scat[off_scat] = a_tm_re_scat[off_scat]
-                                 = a_tm_im_scat[off_scat] = tau_scat[off_scat] = 0.f;
+        /* Find the hit point and trinagle and the angle of incidence */
+        moeller_trumbore(&rays[off_tx_path], &scene, &t, &mesh_ind, &face_ind, &theta);
+        if (mesh_ind == -1) { /* Ray hit nothing */
+          active[active_byte_index] &= ~(1 << active_bit_pos);
+          --num_active;
           continue;
         }
-        /* No obstacle has been hit */
-        /* Calculate the direction */
-        directions_scat[off_scat * 3] = -r.d.x;
-        directions_scat[off_scat * 3 + 1] = -r.d.y;
-        directions_scat[off_scat * 3 + 2] = -r.d.z;
-        /* Calculate the scattering angle */
-        theta_s = acosf(vec3_dot(&r.d, &n) / sqrtf(vec3_dot(&r.d, &r.d)));
-        /* Calculate the scattering coefficients */
-        scat_coefs(theta_s, theta, scene.meshes[mesh_ind].material_index,
-                   &a_te_re_new, &a_te_im_new,
-                   &a_tm_re_new, &a_tm_im_new);
-        /* Calculate the distance */
-        t = sqrtf(vec3_dot(&r.d, &r.d));
-        /* Calculate the delay */
-        tau_scat[off_scat] = tau_t[off] + t / SPEED_OF_LIGHT;
+        /* Calculate the reflection coefficients R_{eTE} and R_{eTM} */
+        refl_coefs(scene.meshes[mesh_ind].material_index,
+                  theta,
+                  &r_te_re, &r_te_im,
+                  &r_tm_re, &r_tm_im);
         /* Calculate the free space loss */
         free_space_loss = free_space_loss_multiplier * t;
         if (free_space_loss > 1.f) {
-          a_te_re_scat[off_scat] /= free_space_loss;
-          a_te_im_scat[off_scat] /= free_space_loss;
-          a_tm_re_scat[off_scat] /= free_space_loss;
-          a_tm_im_scat[off_scat] /= free_space_loss;
+          r_te_re /= free_space_loss;
+          r_te_im /= free_space_loss;
+          r_tm_re /= free_space_loss;
+          r_tm_im /= free_space_loss;
         }
-      }
+        /* Update the gains as a' = a * refl_coefs */
+        a_te_re_new = a_te_re_refl[off_tx_path] * r_te_re - a_te_im_refl[off_tx_path] * r_te_im;
+        a_te_im_new = a_te_re_refl[off_tx_path] * r_te_im + a_te_im_refl[off_tx_path] * r_te_re;
+        a_tm_re_new = a_tm_re_refl[off_tx_path] * r_tm_re - a_tm_im_refl[off_tx_path] * r_tm_im;
+        a_tm_im_new = a_tm_re_refl[off_tx_path] * r_tm_im + a_tm_im_refl[off_tx_path] * r_tm_re;
+        a_te_re_refl[off_tx_path] = a_te_re_new;
+        a_te_im_refl[off_tx_path] = a_te_im_new;
+        a_tm_re_refl[off_tx_path] = a_tm_re_new;
+        a_tm_im_refl[off_tx_path] = a_tm_im_new;
+        /* Update the delay */
+        tau_t[off_tx_path] += t / SPEED_OF_LIGHT;
 
-      /***********************************************************************/
-      /*                          Refract the rays                           */
-      /***********************************************************************/
-      /* TODO */
+        /* Move and reflect the ray */
+        r = rays[off_tx_path];
+        /* Advance the ray to the hit point */
+        *h = vec3_scale(&r.d, t);
+        r.o = vec3_add(h, &r.o);
+        /* Reflect the ray's direction as d' = d - 2*(d \cdot n)*n */
+        n = scene.meshes[mesh_ind].ns[face_ind];
+        t = vec3_dot(&r.d, &n);
+        *h = vec3_scale(&n, 2.f * t);
+        r.d = vec3_sub(&r.d, h);
+        /* Advance the ray origin a bit to avoid intersection with the same triangle */
+        *h = vec3_scale(&r.d, 1e-4f); 
+        r.o = vec3_add(&r.o, h);
+        /* Save the reflected ray */
+        rays[off_tx_path] = r;
+
+        /***********************************************************************/
+        /*                          Scatter the rays                           */
+        /***********************************************************************/
+
+        /* Scatter a path from the hit point towards the rx */
+        for (size_t rx = 0; rx < num_rx; ++rx) {
+          size_t off_scat = ((rx * num_tx + tx) * num_bounces + bounce) * num_paths + path;
+          r.d = vec3_sub(&rx_pos_v[rx], &r.o);
+          r.d = vec3_normalize(&r.d);
+          mesh_ind = face_ind = -1;
+          moeller_trumbore(&r, &scene, &t, &mesh_ind, &face_ind, &theta);
+          if (mesh_ind != -1 && t <= 1.f) {
+            /* An obstacle between the hit point and the rx has been hit */
+            a_te_re_scat[off_scat] = a_te_im_scat[off_scat] = a_tm_re_scat[off_scat]
+                                  = a_tm_im_scat[off_scat] = tau_scat[off_scat] = 0.f;
+            continue;
+          }
+          /* No obstacle has been hit */
+          /* Calculate the direction */
+          directions_scat[off_scat * 3] = -r.d.x;
+          directions_scat[off_scat * 3 + 1] = -r.d.y;
+          directions_scat[off_scat * 3 + 2] = -r.d.z;
+          /* Calculate the scattering angle */
+          theta_s = acosf(vec3_dot(&r.d, &n) / sqrtf(vec3_dot(&r.d, &r.d)));
+          /* Calculate the scattering coefficients */
+          scat_coefs(theta_s, theta, scene.meshes[mesh_ind].material_index,
+                    &a_te_re_new, &a_te_im_new,
+                    &a_tm_re_new, &a_tm_im_new);
+          /* Calculate the distance */
+          t = sqrtf(vec3_dot(&r.d, &r.d));
+          /* Calculate the delay */
+          tau_scat[off_scat] = tau_t[off_tx_path] + t / SPEED_OF_LIGHT;
+          /* Calculate the free space loss */
+          free_space_loss = free_space_loss_multiplier * t;
+          if (free_space_loss > 1.f) {
+            a_te_re_scat[off_scat] /= free_space_loss;
+            a_te_im_scat[off_scat] /= free_space_loss;
+            a_tm_re_scat[off_scat] /= free_space_loss;
+            a_tm_im_scat[off_scat] /= free_space_loss;
+          }
+        }
+
+        /***********************************************************************/
+        /*                          Refract the rays                           */
+        /***********************************************************************/
+        /* TODO */
     }
   }
 
