@@ -35,12 +35,13 @@
  * \param tau_los output array of delays for LoS in seconds, shape (num_rx, num_tx)
  * 
  * Scatter:
- * \param directions_scat output array of directions of incidence for scatter, shape (num_rx, num_tx, num_paths, 3)
+ * \param directions_rx_scat output array of directions of incidence for rx for scatter, shape (num_rx, num_tx, num_bounces * num_paths, 3)
+ * \param directions_tx_scat output array of directions of incidence for tx for scatter, shape (num_paths, 3)
  * \param a_te_re_scat output array of real parts of transverse electric gains for scatter, shape (num_rx, num_tx, num_bounces * num_paths)
- * \p * \param a_te_re_scat output array of real parts of transverse electric gains for scatter, shape (num_rx, num_tx, num_bounces * num_paths)
- * \param a_te_re_scat output array of real parts of transverse electric gains for scatter, shape (num_rx, num_tx, num_bounces * num_paths)
- * \p * \param a_te_re_scat output array of real parts of transverse electric gains for scatter, shape (num_rx, num_tx, num_bounces * num_paths)
- * \param a_te_re_scat output array of real parts of transverse electric gains for scatter, shape (num_rx, num_tx, num_bounces * num_paths)
+ * \param a_te_im_scat output array of imaginary parts of transverse electric gains for scatter, shape (num_rx, num_tx, num_bounces * num_paths)
+ * \param a_tm_re_scat output array of real parts of transverse magnetic gains for scatter, shape (num_rx, num_tx, num_bounces * num_paths)
+ * \param a_tm_im_scat output array of imaginary parts of transverse magnetic gains for scatter, shape (num_rx, num_tx, num_bounces * num_paths)
+ * \param tau_scat output array of delays for scatter in seconds, shape (num_rx, num_tx, num_bounces * num_paths)
 */
 void compute_paths(
     IN const char *scene_filepath,   /* path to the scene file */
@@ -54,14 +55,15 @@ void compute_paths(
     IN size_t num_paths,            /* number of paths */
     IN size_t num_bounces,          /* number of bounces */
     /* LoS */
-    OUT float *directions_los,      /* output array of directions of incidence (num_rx, num_tx, 3) */
+    OUT float *directions_los,   /* output array of directions of incidence for rx (num_rx, num_tx, 3) */
     OUT float *a_te_re_los,         /* output array real parts of TE gains (num_rx, num_tx) */
     OUT float *a_te_im_los,         /* output array imaginary parts of TE gains (num_rx, num_tx) */
     OUT float *a_tm_re_los,         /* output array real parts of TM gains (num_rx, num_tx) */
     OUT float *a_tm_im_los,         /* output array imaginary parts of TM gains (num_rx, num_tx) */
     OUT float *tau_los,             /* output array of delays (num_rx, num_tx) */
     /* Scatter */
-    OUT float *directions_scat,     /* output array of directions of incidence (num_rx, num_tx, num_paths, 3) */
+    OUT float *directions_rx_scat,  /* output array of directions of incidence for rx (num_rx, num_tx, num_bounces * num_paths, 3) */
+    OUT float *directions_tx_scat,  /* output array of directions of incidence for tx (num_paths, 3) */
     OUT float *a_te_re_scat,        /* output array real parts of TE gains (num_rx, num_tx, num_ounces * num_paths) */
     OUT float *a_te_im_scat,        /* output array imaginary parts of TE gains (num_rx, num_tx, num_ounces * num_paths) */
     OUT float *a_tm_re_scat,        /* output array real parts of TM gains (num_rx, num_tx, num_ounces * num_paths) */

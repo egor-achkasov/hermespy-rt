@@ -25,7 +25,8 @@ int main(int argc, char **argv)
   float *a_tm_re_los = (float*)malloc(num_rx * num_tx * sizeof(float));
   float *a_tm_im_los = (float*)malloc(num_rx * num_tx * sizeof(float));
   float *tau_los = (float*)malloc(num_rx * num_tx * sizeof(float));
-  float *directions_scat = (float*)malloc(num_rx * num_tx * num_paths * 3 * sizeof(float));
+  float *directions_rx_scat = (float*)malloc(num_rx * num_tx * num_bounces * num_paths * 3 * sizeof(float));
+  float *directions_tx_scat = (float*)malloc(num_paths * 3 * sizeof(float));
   float *a_te_re_scat = (float*)malloc(num_rx * num_tx * num_bounces * num_paths * sizeof(float));
   float *a_te_im_scat = (float*)malloc(num_rx * num_tx * num_bounces * num_paths * sizeof(float));
   float *a_tm_re_scat = (float*)malloc(num_rx * num_tx * num_bounces * num_paths * sizeof(float));
@@ -40,7 +41,8 @@ int main(int argc, char **argv)
     carrier_frequency,
     num_rx, num_tx, num_paths, num_bounces,
     directions_los, a_te_re_los, a_te_im_los, a_tm_re_los, a_tm_im_los, tau_los,
-    directions_scat, a_te_re_scat, a_te_im_scat, a_tm_re_scat, a_tm_im_scat, tau_scat
+    directions_rx_scat, directions_rx_scat,
+    a_te_re_scat, a_te_im_scat, a_tm_re_scat, a_tm_im_scat, tau_scat
   );
 
   /* Save the results */
@@ -57,7 +59,8 @@ int main(int argc, char **argv)
   WRITE_BIN("a_tm_re_los.bin", a_tm_re_los, num_rx * num_tx);
   WRITE_BIN("a_tm_im_los.bin", a_tm_im_los, num_rx * num_tx);
   WRITE_BIN("tau_los.bin", tau_los, num_rx * num_tx);
-  WRITE_BIN("directions_scat.bin", directions_scat, num_rx * num_tx * num_paths * 3);
+  WRITE_BIN("directions_rx_scat.bin", directions_rx_scat, num_rx * num_tx * num_bounces * num_paths * 3);
+  WRITE_BIN("directions_tx_scat.bin", directions_tx_scat, num_paths * 3);
   WRITE_BIN("a_te_re_scat.bin", a_te_re_scat, num_rx * num_tx * num_bounces * num_paths);
   WRITE_BIN("a_te_im_scat.bin", a_te_im_scat, num_rx * num_tx * num_bounces * num_paths);
   WRITE_BIN("a_tm_re_scat.bin", a_tm_re_scat, num_rx * num_tx * num_bounces * num_paths);

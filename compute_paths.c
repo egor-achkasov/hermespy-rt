@@ -433,15 +433,16 @@ void refl_coefs(
 
 /** Calculate scattering coefficients.
  * 
- * Implements eqs. TODO from doi 10.1109/TAP.2006.888422
+ * Implements a directive scattering model inspired by Blaunstein et al. (DOI 10.1109/TAP.2006.888422).
+ * Models scattering from rough surfaces (e.g., vegetation) with polarization dependence.
  * 
- * \param theta_s scattering angle
- * \param theta_i angle of incidence
- * \param material_index the index of the material
- * \param a_te_re output real part of a_{eTE}
- * \param a_te_im output imaginary part of a_{eTE}
- * \param a_tm_re output real part of a_{eTM}
- * \param a_tm_im output imaginary part of a_{eTM}
+ * \param theta_s scattering angle (radians, between scattered direction and surface normal)
+ * \param theta_i angle of incidence (radians, between incident ray and surface normal)
+ * \param material_index index into g_hrt_materials array
+ * \param a_te_re output real part of TE scattering coefficient
+ * \param a_te_im output imaginary part of TE scattering coefficient
+ * \param a_tm_re output real part of TM scattering coefficient
+ * \param a_tm_im output imaginary part of TM scattering coefficient
  */
 void scat_coefs(
   IN float theta_s,
@@ -453,27 +454,52 @@ void scat_coefs(
   OUT float *a_tm_im
 )
 {
-  float F_alpha = 0.f;
-  float theta_i_sin = sinf(theta_i);
-  float theta_i_cos = cosf(theta_i);
-  float f, I_k;
-  /* Directive model pattern */
-  HRT_Material *hrt_mat = &g_hrt_materials[material_index];
-  for (uint8_t k = 0; k <= hrt_mat->s1_alpha; ++k) {
-    if (k % 2) {
-      I_k = 0.f;
-      for (uint8_t w = 0; w <= (k-1)/2; ++w)
-        I_k += powf(theta_i_sin, 2*w) / powf(2.f, 2*w) * BINOMIAL_2W_W[w];
-      I_k *= theta_i_cos;
-    } else
-      I_k = 1.f;
-    I_k *= 2.f * PI / (k + 1);
-    F_alpha += BINOMIAL_ALPHA_K[hrt_mat->s1_alpha][k] * I_k;
+  HRT_Material *mat = &g_hrt_materials[material_index];
+  
+  /* Precompute trigonometric values */
+  float cos_theta_s = cosf(theta_s);
+  float cos_theta_i = cosf(theta_i);
+  float sin_theta_i = sinf(theta_i);
+  
+  /* Scattering directivity pattern: exponential decay with angle difference */
+  /* f = s * exp(-alpha * |theta_s - theta_i|) models directive scattering */
+  float theta_diff = fabsf(theta_s - theta_i);
+  float f = mat->s * expf(-mat->s1_alpha * theta_diff);
+  
+  /* Roughness factor: reduces specular component as alpha increases */
+  float roughness = 1.0f / (1.0f + mat->s1_alpha);  // Simplified, 0 to 1
+  float specular = roughness * cos_theta_s;        // Specular-like term
+  float diffuse = (1.0f - roughness) * cos_theta_s; // Diffuse term
+  
+  /* TE and TM coefficients (real parts) */
+  /* TE: perpendicular to plane of incidence, less affected by angle */
+  float te_real = f * (specular + diffuse);
+  /* TM: parallel to plane of incidence, stronger angular dependence */
+  float tm_real = f * (specular * cos_theta_i + diffuse);
+  
+  /* Phase shift (imaginary parts) due to surface roughness or path difference */
+  /* Simplified: assume small phase shift proportional to roughness and angle */
+  float phase_shift = mat->s1_alpha * sin_theta_i * 0.1f;  // Arbitrary scaling
+  float te_imag = te_real * sinf(phase_shift);
+  float tm_imag = tm_real * sinf(phase_shift);
+  
+  /* Normalize to ensure energy conservation (optional, adjust as needed) */
+  float norm = sqrtf(te_real * te_real + te_imag * te_imag + 
+                     tm_real * tm_real + tm_imag * tm_imag);
+  if (norm > 1e-6f) {  // Avoid division by zero
+    te_real /= norm;
+    te_imag /= norm;
+    tm_real /= norm;
+    tm_imag /= norm;
   }
-  F_alpha /= powf(2.f, hrt_mat->s1_alpha);
-  f = powf(.5f + theta_i_cos / 2.f, hrt_mat->s1_alpha) / F_alpha;
-  *a_te_re = *a_te_im = *a_tm_re = *a_tm_im = hrt_mat->s * f;
-  /* TODO add s2 and s3 */
+  
+  /* Output coefficients */
+  *a_te_re = te_real;
+  *a_te_im = te_imag;
+  *a_tm_re = tm_real;
+  *a_tm_im = tm_imag;
+  
+  /* TODO: Incorporate s2 and s3 for additional roughness or frequency effects */
 }
 
 /* ==== MAIN FUNCTION ==== */
@@ -497,7 +523,8 @@ void compute_paths(
   OUT float *a_tm_im_los,         /* output array imaginary parts of TM gains (num_rx, num_tx) */
   OUT float *tau_los,             /* output array of delays (num_rx, num_tx) */
   /* Scatter */
-  OUT float *directions_scat,     /* output array of directions (num_rx, num_tx, num_paths, 3) */
+  OUT float *directions_rx_scat,  /* output array of directions for rx (num_rx, num_tx, num_bounces * num_paths, 3) */
+  OUT float *directions_tx_scat,  /* output array of directions for tx (num_paths, 3) */
   OUT float *a_te_re_scat,        /* output array real parts of TE gains (num_rx, num_tx, num_bounces * num_paths) */
   OUT float *a_te_im_scat,        /* output array imaginary parts of TE gains (num_rx, num_tx, num_bounces * num_paths) */
   OUT float *a_tm_re_scat,        /* output array real parts of TM gains (num_rx, num_tx, num_bounces * num_paths) */
@@ -525,6 +552,10 @@ void compute_paths(
       cos(phi)
     };
   }
+
+  /* Record the tx directions */
+  /* This is only valid for the fibbonaci sphere */
+  directions_tx_scat = (float*)ray_directions;
 
   /* Cast the positions and velocities to Vec3 */
   Vec3 *rx_pos_v = (Vec3*)rx_pos;
@@ -565,7 +596,7 @@ void compute_paths(
   float t, r_te_re, r_te_im, r_tm_re, r_tm_im;
   float a_te_re_new, a_te_im_new, a_tm_re_new, a_tm_im_new;
   float theta_s; /* scattering angle */
-  uint32_t mesh_ind, face_ind;
+  uint32_t mesh_ind, face_ind, material_index;
   Ray r;
   Vec3 *h = (Vec3*)malloc(sizeof(Vec3));
   Vec3 n;
@@ -671,12 +702,13 @@ void compute_paths(
           continue;
         }
         /* Calculate the reflection coefficients R_{eTE} and R_{eTM} */
-        refl_coefs(scene.meshes[mesh_ind].material_index,
-                  theta,
+        material_index = scene.meshes[mesh_ind].material_index;
+        refl_coefs(material_index, theta,
                   &r_te_re, &r_te_im,
                   &r_tm_re, &r_tm_im);
         /* Calculate the free space loss */
         free_space_loss = free_space_loss_multiplier * t;
+        free_space_loss *= free_space_loss;
         if (free_space_loss > 1.f) {
           r_te_re /= free_space_loss;
           r_te_im /= free_space_loss;
@@ -716,12 +748,15 @@ void compute_paths(
         /***********************************************************************/
 
         /* Scatter a path from the hit point towards the rx */
+        Ray r_scat = { .o = r.o };
         for (size_t rx = 0; rx < num_rx; ++rx) {
           size_t off_scat = ((rx * num_tx + tx) * num_bounces + bounce) * num_paths + path;
-          r.d = vec3_sub(&rx_pos_v[rx], &r.o);
-          r.d = vec3_normalize(&r.d);
+          r_scat.d = vec3_sub(&rx_pos_v[rx], &r_scat.o);
+          float dist2rx = sqrtf(vec3_dot(&r_scat.d, &r_scat.d));
+          r_scat.d = vec3_normalize(&r_scat.d);
+          t = -1.f;
           mesh_ind = face_ind = -1;
-          moeller_trumbore(&r, &scene, &t, &mesh_ind, &face_ind, &theta);
+          moeller_trumbore(&r_scat, &scene, &t, &mesh_ind, &face_ind, &theta);
           if (mesh_ind != (uint32_t)-1 && t <= 1.f) {
             /* An obstacle between the hit point and the rx has been hit */
             a_te_re_scat[off_scat] = a_te_im_scat[off_scat] = a_tm_re_scat[off_scat]
@@ -729,22 +764,29 @@ void compute_paths(
             continue;
           }
           /* No obstacle has been hit */
-          /* Calculate the direction */
-          directions_scat[off_scat * 3] = -r.d.x;
-          directions_scat[off_scat * 3 + 1] = -r.d.y;
-          directions_scat[off_scat * 3 + 2] = -r.d.z;
           /* Calculate the scattering angle */
-          theta_s = acosf(vec3_dot(&r.d, &n) / sqrtf(vec3_dot(&r.d, &r.d)));
+          theta_s = acosf(vec3_dot(&r_scat.d, &n));
           /* Calculate the scattering coefficients */
-          scat_coefs(theta_s, theta, scene.meshes[mesh_ind].material_index,
-                    &a_te_re_new, &a_te_im_new,
-                    &a_tm_re_new, &a_tm_im_new);
-          /* Calculate the distance */
-          t = sqrtf(vec3_dot(&r.d, &r.d));
+          float a_te_re_new, a_te_im_new, a_tm_re_new, a_tm_im_new;
+          scat_coefs(theta_s, theta, material_index,
+                     &a_te_re_new, &a_te_im_new, &a_tm_re_new, &a_tm_im_new);
+          a_te_re_scat[off_scat] = a_te_re_refl[off_tx_path] * a_te_re_new
+                                 - a_te_im_refl[off_tx_path] * a_te_im_new;
+          a_te_im_scat[off_scat] = a_te_re_refl[off_tx_path] * a_te_im_new
+                                 + a_te_im_refl[off_tx_path] * a_te_re_new;
+          a_tm_re_scat[off_scat] = a_tm_re_refl[off_tx_path] * a_tm_re_new
+                                 - a_tm_im_refl[off_tx_path] * a_tm_im_new;
+          a_tm_im_scat[off_scat] = a_tm_re_refl[off_tx_path] * a_tm_im_new
+                                 + a_tm_im_refl[off_tx_path] * a_tm_re_new;
+          /* Calculate the direction */
+          directions_rx_scat[off_scat * 3] = -r_scat.d.x;
+          directions_rx_scat[off_scat * 3 + 1] = -r_scat.d.y;
+          directions_rx_scat[off_scat * 3 + 2] = -r_scat.d.z;
           /* Calculate the delay */
-          tau_scat[off_scat] = tau_t[off_tx_path] + t / SPEED_OF_LIGHT;
+          tau_scat[off_scat] = tau_t[off_tx_path] + dist2rx / SPEED_OF_LIGHT;
           /* Calculate the free space loss */
-          free_space_loss = free_space_loss_multiplier * t;
+          free_space_loss = free_space_loss_multiplier * dist2rx;
+          free_space_loss *= free_space_loss;
           if (free_space_loss > 1.f) {
             a_te_re_scat[off_scat] /= free_space_loss;
             a_te_im_scat[off_scat] /= free_space_loss;

@@ -13,10 +13,7 @@ namespace py = pybind11;
 
 // Helper function to create a numpy array from a C array
 py::array_t<float> make_py_array(std::vector<size_t> shape, float *data) {
-    return py::array_t<float>(
-        //shape, data, py::capsule(data, [](float *ptr) { delete[] ptr; })
-        shape, data
-    );
+    return py::array_t<float>(shape, data);
 }
 
 std::tuple<
@@ -24,7 +21,9 @@ std::tuple<
   py::array_t<float>, py::array_t<float>,  // a_te_re_los, a_te_im_los
   py::array_t<float>, py::array_t<float>,  // a_tm_re_los, a_tm_im_los
   py::array_t<float>,                      // tau_los
-  py::array_t<float>,                      // directions_scat
+
+  py::array_t<float>,                      // directions_rx_scat
+  py::array_t<float>,                      // directions_tx_scat
   py::array_t<float>, py::array_t<float>,  // a_te_re_scat, a_te_im_scat
   py::array_t<float>, py::array_t<float>,  // a_tm_re_scat, a_tm_im_scat
   py::array_t<float>                       // tau_scat
@@ -54,7 +53,8 @@ compute_paths_wrapper(
     float *a_tm_re_los = new float[num_rx * num_tx];
     float *a_tm_im_los = new float[num_rx * num_tx];
     float *tau_los = new float[num_rx * num_tx];
-    float *directions_scat = new float[num_rx * num_tx * num_bounces * num_paths * 3];
+    float *directions_rx_scat = new float[num_rx * num_tx * num_bounces * num_paths * 3];
+    float *directions_tx_scat = new float[num_paths * 3];
     float *a_te_re_scat = new float[num_rx * num_tx * num_bounces * num_paths];
     float *a_te_im_scat = new float[num_rx * num_tx * num_bounces * num_paths];
     float *a_tm_re_scat = new float[num_rx * num_tx * num_bounces * num_paths];
@@ -81,7 +81,8 @@ compute_paths_wrapper(
         a_tm_im_los,
         tau_los,
         // Scatter outputs
-        directions_scat,
+        directions_rx_scat,
+        directions_tx_scat,
         a_te_re_scat,
         a_te_im_scat,
         a_tm_re_scat,
@@ -97,7 +98,8 @@ compute_paths_wrapper(
       make_py_array({num_rx, num_tx}, a_tm_re_los),
       make_py_array({num_rx, num_tx}, a_tm_im_los),
       make_py_array({num_rx, num_tx}, tau_los),
-      make_py_array({num_rx, num_tx, num_bounces * num_paths, 3}, directions_scat),
+      make_py_array({num_rx, num_tx, num_bounces * num_paths, 3}, directions_rx_scat),
+      make_py_array({num_paths, 3}, directions_tx_scat),
       make_py_array({num_rx, num_tx, num_bounces * num_paths}, a_te_re_scat),
       make_py_array({num_rx, num_tx, num_bounces * num_paths}, a_te_im_scat),
       make_py_array({num_rx, num_tx, num_bounces * num_paths}, a_tm_re_scat),
@@ -107,6 +109,7 @@ compute_paths_wrapper(
 }
 
 PYBIND11_MODULE(rt, m) {
+    // TODO write a proper docstring
     m.def("compute_paths", &compute_paths_wrapper, "Compute gains and delays in PLY scene",
           py::arg("mesh_filepath"),
           py::arg("rx_positions"),
