@@ -44,9 +44,26 @@ int main(int argc, char *argv[]) {
   mesh_box.is = (uint32_t*)is_temp;
   mesh_box.material_index = MATERIAL_CONCRETE;
 
+  HRT_Mesh mesh_simple_reflector;
+  mesh_simple_reflector.num_vertices = 4;
+  float vs_temp2[] = {
+    -0.5f, -0.5f, 0.f,
+    0.5f, -0.5f, 0.f,
+    0.5f, 0.5f, 0.f,
+    -0.5f, 0.5f, 0.f,
+  };
+  mesh_simple_reflector.vs = (float*)vs_temp2;
+  mesh_simple_reflector.num_triangles = 2;
+  uint32_t is_temp2[] = {
+    0, 1, 2,
+    0, 2, 3,
+  };
+  mesh_simple_reflector.is = (uint32_t*)is_temp2;
+  mesh_simple_reflector.material_index = MATERIAL_CONCRETE;
+
   HRT_Scene scene;
   scene.num_meshes = 1;
-  scene.meshes = &mesh_box;
+  scene.meshes = &mesh_simple_reflector;
 
   FILE *fp = fopen("scene.hrt", "wb");
   if (fp == NULL) {
