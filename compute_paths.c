@@ -673,18 +673,34 @@ void compute_paths(
   * - Spawn scattering rays towards the rx
   * - TODO Spawn refraction rays with gains as per eqs. (31c)-(31d) from ITU-R P.2040-3
   */
+  FILE* ray_file = fopen("rays.bin", "wb");
+  if (!ray_file) {
+    fprintf(stderr, "Could not open file rays.bin\n");
+    exit(8);
+  }
+  fwrite(rays, sizeof(Ray), num_tx * num_paths, ray_file);
+
+  FILE* active_file = fopen("active.bin", "wb");
+  if (!active_file) {
+    fprintf(stderr, "Could not open file active.bin\n");
+    exit(8);
+  }
+  fwrite(active, sizeof(uint8_t), num_tx * num_paths / 8 + 1, active_file);
+
   for (size_t bounce = 0; bounce < num_bounces; ++bounce) {
-    size_t active_byte_index = 0, active_bit_pos = 0; /* active[active_byte_index] & (1 << active_bit_pos) */
+    /* active[active_byte_index] & (1 << active_bit_pos) */
+    size_t active_byte_index = 0;
+    uint8_t active_bit = 1;
     size_t off_tx_path = 0; /* tx * num_paths + path */
     for (size_t tx = 0; tx < num_tx; ++tx)
-      for (size_t path = 0; path < num_paths; ++path, ++off_tx_path) {
+      for (size_t path = 0; path < num_paths; ++path, ++off_tx_path, active_bit <<= 1) {
 
         /* Check if the ray is active */
-        if (active_bit_pos == 8) {
-          active_bit_pos = 0;
+        if (!active_bit) {
+          active_bit = 1;
           ++active_byte_index;
         }
-        if (!(active[active_byte_index] & (1 << active_bit_pos)))
+        if (!(active[active_byte_index] & active_bit))
           continue;
 
         /***********************************************************************/
@@ -697,7 +713,7 @@ void compute_paths(
         /* Find the hit point and trinagle and the angle of incidence */
         moeller_trumbore(&rays[off_tx_path], &scene, &t, &mesh_ind, &face_ind, &theta);
         if (mesh_ind == (uint32_t)-1) { /* Ray hit nothing */
-          active[active_byte_index] &= ~(1 << active_bit_pos);
+          active[active_byte_index] &= ~active_bit;
           --num_active;
           continue;
         }
@@ -800,7 +816,11 @@ void compute_paths(
         /***********************************************************************/
         /* TODO */
     }
+    fwrite(rays, sizeof(Ray), num_tx * num_paths, ray_file);
+    fwrite(active, sizeof(uint8_t), num_tx * num_paths / 8 + 1, active_file);
   }
+  fclose(ray_file);
+  fclose(active_file);
 
   /* Free */
   free(a_te_re_refl);
