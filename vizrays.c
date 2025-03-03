@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <stdint.h>
+#include <ctype.h> /* for tolower */ 
 
 /**
  * Structs
@@ -15,7 +16,8 @@ typedef struct {
 } Vec3;
 
 typedef struct {
-  Vec3 o;
+  Vec3 o, t;
+  float d;
   float lastX, lastY;
   float yaw, pitch;
 } Camera;
@@ -36,7 +38,13 @@ typedef struct {
  * Globals
  */
 
-Camera g_cam = {{0.f, 0.f, 5.f}, 0.f, 0.f, 0.f, 0.f};
+Camera g_cam = {
+  {0.f, 0.f, 5.f},
+  {0.f, 0.f, 0.f},
+  5.f,
+  0.f, 0.f,
+  0.f, 0.f
+};
 uint8_t g_mouseDown = 0;
 
 float* g_rays = NULL;
@@ -59,7 +67,10 @@ void loadRays(const char* filename) {
   
   uint32_t fileSize = (g_numBounces + 1) * g_numTx * g_numPaths * 2 * 3;
   g_rays = (float*)malloc(fileSize * sizeof(float));
-  fread(g_rays, sizeof(float), fileSize, file);
+  if (fread(g_rays, sizeof(float), fileSize, file) != fileSize) {
+    printf("Failed to read rays\n");
+    exit(8);
+  }
   fclose(file);
 
   /* active.bin */
@@ -70,7 +81,10 @@ void loadRays(const char* filename) {
   }
   uint32_t activeSize = (g_numBounces + 1) * (g_numTx * g_numPaths / 8 + 1);
   g_active = (uint8_t*)malloc(activeSize * sizeof(uint8_t));
-  fread(g_active, sizeof(uint8_t), activeSize, file);
+  if (fread(g_active, sizeof(uint8_t), activeSize, file) != activeSize) {
+    printf("Failed to read active\n");
+    exit(8);
+  }
   fclose(file);
 }
 
@@ -83,14 +97,20 @@ void loadScene(const char* filename) {
 
   /* Magic */
   char magic[3];
-  fread(magic, 1, 3, file);
+  if (fread(magic, 1, 3, file) != 3) {
+    printf("Failed to read magic\n");
+    exit(8);
+  }
   if (magic[0] != 'H' || magic[1] != 'R' || magic[2] != 'T') {
     printf("Invalid file format\n");
     exit(8);
   }
 
   /* Scene */
-  fread(&g_scene.num_meshes, sizeof(uint32_t), 1, file);
+  if (fread(&g_scene.num_meshes, sizeof(uint32_t), 1, file) != 1) {
+    printf("Failed to read num_meshes\n");
+    exit(8);
+  }
   g_scene.meshes = (Mesh*)malloc(g_scene.num_meshes * sizeof(Mesh));
 
   /* Meshes */
@@ -98,12 +118,25 @@ void loadScene(const char* filename) {
        mesh != g_scene.meshes + g_scene.num_meshes;
        ++mesh)
   {
-    fread(&mesh->num_vertices, sizeof(uint32_t), 1, file);
+    if (fread(&mesh->num_vertices, sizeof(uint32_t), 1, file) != 1) {
+      printf("Failed to read num_vertices\n");
+      exit(8);
+    }
     mesh->vs = (Vec3*)malloc(mesh->num_vertices * sizeof(Vec3));
-    fread(mesh->vs, sizeof(Vec3), mesh->num_vertices, file);
-    fread(&mesh->num_triangles, sizeof(uint32_t), 1, file);
+    if (fread(mesh->vs, sizeof(Vec3), mesh->num_vertices, file) != mesh->num_vertices) {
+      printf("Failed to read vertices\n");
+      exit(8);
+    }
+    if (fread(&mesh->num_triangles, sizeof(uint32_t), 1, file) != 1) {
+      printf("Failed to read num_triangles\n");
+      exit(8);
+    }
     mesh->is = (uint32_t*)malloc(mesh->num_triangles * 3 * sizeof(uint32_t));
-    fread(mesh->is, sizeof(uint32_t), mesh->num_triangles * 3, file);
+    if (fread(mesh->is, sizeof(uint32_t), mesh->num_triangles * 3, file) != mesh->num_triangles * 3) {
+      printf("Failed to read indices\n");
+      exit(8);
+    }
+    fseek(file, sizeof(uint32_t), SEEK_CUR); /* Skip material index */
   }
   fclose(file);
 }
@@ -117,6 +150,9 @@ void drawScene() {
   glBegin(GL_TRIANGLES);
   for (uint32_t i = 0; i < g_scene.num_meshes; i++) {
     Mesh* mesh = &g_scene.meshes[i];
+    float mesh_color = (float)i / g_scene.num_meshes;
+    glColor3f(0.f, mesh_color, 1.f - mesh_color);
+
     for (uint32_t j = 0; j < mesh->num_triangles; j++) {
       uint32_t idx = mesh->is[j * 3];
       Vec3 v1 = mesh->vs[idx];
@@ -168,7 +204,8 @@ void drawRays() {
     glVertex3f(x2, y2, z2);
   }
   glEnd();
-  printf("Skipped %d paths\n", num_skipped);
+  printf("\rSkipped %d paths", num_skipped);
+  fflush(stdout);
   
   /* Draw points */
   glPointSize(5.0f);
@@ -192,21 +229,6 @@ void drawRays() {
  * Callbacks
  */
 
-void display() {
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-  glLoadIdentity();
-  
-  /* Apply camera transformation */
-  glRotatef(g_cam.pitch, 1.0f, 0.0f, 0.0f);
-  glRotatef(g_cam.yaw, 0.0f, 1.0f, 0.0f);
-  glTranslatef(-g_cam.o.x, -g_cam.o.y, -g_cam.o.z);
-
-  drawScene();
-  drawRays();
-  
-  glutSwapBuffers();
-}
-
 void reshape(int w, int h) {
   glViewport(0, 0, w, h);
   glMatrixMode(GL_PROJECTION);
@@ -215,71 +237,125 @@ void reshape(int w, int h) {
   glMatrixMode(GL_MODELVIEW);
 }
 
-void keyboard(unsigned char key, int x, int y) {
-  float speed = 0.5f;
-  switch (key) {
-    case 'w': // Forward
-      g_cam.o.x += sin(g_cam.yaw * M_PI/180.0f) * speed;
-      g_cam.o.z -= cos(g_cam.yaw * M_PI/180.0f) * speed;
-      break;
-    case 's': // Backward
-      g_cam.o.x -= sin(g_cam.yaw * M_PI/180.0f) * speed;
-      g_cam.o.z += cos(g_cam.yaw * M_PI/180.0f) * speed;
-      break;
-    case 'a': // Left
-      g_cam.o.x -= cos(g_cam.yaw * M_PI/180.0f) * speed;
-      g_cam.o.z -= sin(g_cam.yaw * M_PI/180.0f) * speed;
-      break;
-    case 'd': // Right
-      g_cam.o.x += cos(g_cam.yaw * M_PI/180.0f) * speed;
-      g_cam.o.z += sin(g_cam.yaw * M_PI/180.0f) * speed;
-      break;
-    case 'q': // Up
-      g_cam.o.y += speed;
-      break;
-    case 'e': // Down
-      g_cam.o.y -= speed;
-      break;
-    case 'x': // Next bounce
-      if (g_bounce_cur != g_numBounces)
-        g_bounce_cur++;
-      break;
-    case 'z': // Previous bounce
-      if (g_bounce_cur != 0)
-        g_bounce_cur--;
-      break;
-    case 27: // Escape key
-      free(g_rays);
-      for (uint32_t i = 0; i < g_scene.num_meshes; i++) {
-        free(g_scene.meshes[i].vs);
-        free(g_scene.meshes[i].is);
-      }
-      free(g_scene.meshes);
-      exit(0);
-  }
-  glutPostRedisplay();
+void display() {
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  glLoadIdentity();
+  
+  /* Look at target from camera position */
+  gluLookAt(
+      g_cam.o.x, g_cam.o.y, g_cam.o.z,
+      g_cam.t.x, g_cam.t.y, g_cam.t.z,
+      0.0f, 1.0f, 0.0f
+  );
+
+  drawScene();
+  drawRays();
+  
+  glutSwapBuffers();
 }
 
-void motion(int x, int y) {
-  if (!g_mouseDown) return;
-  g_cam.yaw += (x - g_cam.lastX) * 0.2f;
-  g_cam.pitch += (y - g_cam.lastY) * 0.2f;
-  g_cam.pitch = fmax(-89.0f, fmin(89.0f, g_cam.pitch));
-  g_cam.lastX = x;
-  g_cam.lastY = y;
+void updateCamera() {
+  float x = g_cam.d * cosf(g_cam.pitch) * cosf(g_cam.yaw);
+  float y = g_cam.d * sinf(g_cam.pitch);
+  float z = g_cam.d * cosf(g_cam.pitch) * sinf(g_cam.yaw);
+  
+  g_cam.o.x = g_cam.t.x + x;
+  g_cam.o.y = g_cam.t.y + y;
+  g_cam.o.z = g_cam.t.z + z;
+  
+  gluLookAt(g_cam.o.x, g_cam.o.y, g_cam.o.z,
+            g_cam.t.x, g_cam.t.y, g_cam.t.z,
+            0.0f, 1.0f, 0.0f);
+}
+
+void keyboard(unsigned char key, int x, int y) {
+  float speed = 0.1f;
+  /* Speed up if SHIFT is down */
+  if (glutGetModifiers() & GLUT_ACTIVE_SHIFT) {
+    speed *= 5;
+    key = tolower(key);
+  }
+  
+  /* Calculate forward direction */
+  Vec3 dir = {
+    g_cam.t.x - g_cam.o.x,
+    g_cam.t.y - g_cam.o.y,
+    g_cam.t.z - g_cam.o.z
+  };
+  float norm = sqrtf(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+  Vec3 forward = {dir.x / norm, dir.y / norm, dir.z / norm};
+  
+  /* Calculate right vector (cross product of forward and up (0,0,1)) */
+  norm = sqrtf(forward.z * forward.z + forward.x * forward.x);
+  Vec3 right = {forward.z / norm, 0.0f, -forward.x / norm};
+  
+  switch (key) {
+    case 'w': /* Move target forward */
+      g_cam.t.x += forward.x * speed;
+      g_cam.t.z += forward.z * speed;
+      break;
+    case 's': /* Move target backward */
+      g_cam.t.x -= forward.x * speed;
+      g_cam.t.z -= forward.z * speed;
+      break;
+    case 'a': /* Move target left */
+      g_cam.t.x += right.x * speed;
+      g_cam.t.z += right.z * speed;
+      break;
+    case 'd': /* Move target right */
+      g_cam.t.x -= right.x * speed;
+      g_cam.t.z -= right.z * speed;
+      break;
+    case 'x': /* Increase g_curBounce */
+      if (g_bounce_cur < g_numBounces) g_bounce_cur++;
+      break;
+    case 'z': /* Decrease g_curBounce */
+      if (g_bounce_cur > 0) g_bounce_cur--;
+      break;
+  }
+  
+  updateCamera();
   glutPostRedisplay();
 }
 
 void mouse(int button, int state, int x, int y) {
   if (button == GLUT_LEFT_BUTTON) {
-    if (state == GLUT_DOWN) {
-      g_mouseDown = 1;
-      g_cam.lastX = x;
-      g_cam.lastY = y;
-    } else {
-      g_mouseDown = 0;
-    }
+    g_mouseDown = (state == GLUT_DOWN);
+    g_cam.lastX = x;
+    g_cam.lastY = y;
   }
+  /* Handle scroll wheel */
+  else if (button == 3) { /* Scroll up */
+    g_cam.d = fmaxf(0.1f, g_cam.d - 0.5f); /* Prevent going too close */
+    updateCamera();
+    glutPostRedisplay();
+  }
+  else if (button == 4) { /* Scroll down */
+    g_cam.d += 0.5f;
+    updateCamera();
+    glutPostRedisplay();
+  }
+}
+
+void mouseMotion(int x, int y) {
+  if (!g_mouseDown) return;
+
+  float sensitivity = 0.005f;
+  float dx = (float)(x - g_cam.lastX);
+  float dy = (float)(y - g_cam.lastY);
+  
+  g_cam.yaw -= dx * sensitivity;
+  g_cam.pitch -= dy * sensitivity;
+  
+  /* Clamp pitch to prevent flipping */
+  if (g_cam.pitch > 1.5f) g_cam.pitch = 1.5f;
+  if (g_cam.pitch < -1.5f) g_cam.pitch = -1.5f;
+  
+  g_cam.lastX = x;
+  g_cam.lastY = y;
+  
+  updateCamera();
+  glutPostRedisplay();
 }
 
 /**
@@ -309,8 +385,9 @@ int main(int argc, char** argv) {
   glutReshapeFunc(reshape);
   glutKeyboardFunc(keyboard);
   glutMouseFunc(mouse);
-  glutMotionFunc(motion);
+  glutMotionFunc(mouseMotion);
   
+  updateCamera();
   glutMainLoop();
   
   return 0;
