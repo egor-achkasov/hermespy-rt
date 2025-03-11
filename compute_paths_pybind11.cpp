@@ -46,6 +46,7 @@ public:
     py::array_t<std::complex<float>> a_te;
     py::array_t<std::complex<float>> a_tm;
     py::array_t<float> tau;
+    py::array_t<float> freq_shift;
 
     PathsInfoPython(const PathsInfo& paths, size_t num_rx, size_t num_tx) {
         num_paths = paths.num_paths;
@@ -66,7 +67,17 @@ public:
         a_te = make_complex_array(paths.a_te_re, paths.a_te_im, num_rx, num_tx, paths.num_paths);
         a_tm = make_complex_array(paths.a_tm_re, paths.a_tm_im, num_rx, num_tx, paths.num_paths);
 
-        tau = py::array_t<float>({num_rx, num_tx, (size_t)paths.num_paths}, paths.tau, py::capsule(paths.tau, capsule_deleter));
+        tau = py::array_t<float>(
+            {num_rx, num_tx, (size_t)paths.num_paths},
+            paths.tau,
+            py::capsule(paths.tau, capsule_deleter)
+        );
+
+        freq_shift = py::array_t<float>(
+            {num_rx, num_tx, (size_t)paths.num_paths},
+            paths.freq_shift,
+            py::capsule(paths.freq_shift, capsule_deleter)
+        );
     }
 };
 
@@ -98,7 +109,8 @@ compute_paths_wrapper(
         .a_te_im = new float[num_rx * num_tx],
         .a_tm_re = new float[num_rx * num_tx],
         .a_tm_im = new float[num_rx * num_tx],
-        .tau = new float[num_rx * num_tx]
+        .tau = new float[num_rx * num_tx],
+        .freq_shift = new float[num_rx * num_tx]
     };
     PathsInfo scatter = {
         .num_paths = (uint32_t)(num_bounces * num_paths),
@@ -108,7 +120,8 @@ compute_paths_wrapper(
         .a_te_im = new float[num_rx * num_tx * num_bounces * num_paths],
         .a_tm_re = new float[num_rx * num_tx * num_bounces * num_paths],
         .a_tm_im = new float[num_rx * num_tx * num_bounces * num_paths],
-        .tau = new float[num_rx * num_tx * num_bounces * num_paths]
+        .tau = new float[num_rx * num_tx * num_bounces * num_paths],
+        .freq_shift = new float[num_rx * num_tx * num_bounces * num_paths]
     };
 
     // Call the C function
@@ -141,7 +154,8 @@ PYBIND11_MODULE(rt, m) {
         .def_readonly("directions_tx", &PathsInfoPython::directions_tx)
         .def_readonly("a_te", &PathsInfoPython::a_te)
         .def_readonly("a_tm", &PathsInfoPython::a_tm)
-        .def_readonly("tau", &PathsInfoPython::tau);
+        .def_readonly("tau", &PathsInfoPython::tau)
+        .def_readonly("freq_shift", &PathsInfoPython::freq_shift);
 
     // TODO write a proper docstring
     m.def("compute_paths", &compute_paths_wrapper, "Compute gains and delays",

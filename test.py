@@ -54,11 +54,31 @@ print(f"scatter.a_tm.real min, max: {np.min(scatter.a_tm.real)}, {np.max(scatter
 print(f"scatter.a_tm.imag min, max: {np.min(scatter.a_tm.imag)}, {np.max(scatter.a_tm.imag)}")
 
 # Asssert shapes
+# LoS
 assert los.num_paths == 1
+assert (
+    (num_rx, num_tx, 1, 3)
+    == los.directions_rx.shape
+    == los.directions_tx.shape
+)
+assert (
+    (num_rx, num_tx, 1)
+    == los.a_te.shape
+    == los.a_tm.shape
+    == los.tau.shape
+    == los.freq_shift.shape
+)
+# Scatter
 assert scatter.num_paths == num_bounces * num_paths
-assert los.directions_rx.shape == (num_rx, num_tx, 1, 3)
-assert los.directions_tx.shape == (num_rx, num_tx, 1, 3)
-assert scatter.directions_rx.shape == (num_rx, num_tx, scatter.num_paths, 3)
-assert scatter.directions_tx.shape == (num_rx, num_tx, scatter.num_paths, 3)
-assert los.a_te.shape == los.a_tm.shape == los.tau.shape == (num_rx, num_tx, 1)
-assert scatter.a_te.shape == scatter.a_tm.shape == scatter.tau.shape == (num_rx, num_tx, scatter.num_paths)
+assert (
+    (num_rx, num_tx, scatter.num_paths, 3)
+    == scatter.directions_rx.shape
+    == scatter.directions_tx.shape
+)
+assert (
+    (num_rx, num_tx, scatter.num_paths)
+    == scatter.a_te.shape
+    == scatter.a_tm.shape
+    == scatter.tau.shape
+    == scatter.freq_shift.shape
+)

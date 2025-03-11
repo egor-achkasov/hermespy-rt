@@ -24,7 +24,8 @@ int main(int argc, char **argv)
     .a_te_im = (float*)malloc(g_numRx * g_numTx * sizeof(float)),
     .a_tm_re = (float*)malloc(g_numRx * g_numTx * sizeof(float)),
     .a_tm_im = (float*)malloc(g_numRx * g_numTx * sizeof(float)),
-    .tau = (float*)malloc(g_numRx * g_numTx * sizeof(float))
+    .tau = (float*)malloc(g_numRx * g_numTx * sizeof(float)),
+    .freq_shift = (float*)malloc(g_numRx * g_numTx * sizeof(float))
   };
   PathsInfo scatter = {
     .num_paths = g_numBounces * g_numPaths,
@@ -34,7 +35,8 @@ int main(int argc, char **argv)
     .a_te_im = (float*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * sizeof(float)),
     .a_tm_re = (float*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * sizeof(float)),
     .a_tm_im = (float*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * sizeof(float)),
-    .tau = (float*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * sizeof(float))
+    .tau = (float*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * sizeof(float)),
+    .freq_shift = (float*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * sizeof(float))
   };
   compute_paths(
     argv[1],

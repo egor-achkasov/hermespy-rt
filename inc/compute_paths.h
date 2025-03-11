@@ -17,6 +17,7 @@ typedef struct {
     float *a_tm_re; /* shape (num_rx, num_tx, num_paths) */
     float *a_tm_im; /* shape (num_rx, num_tx, num_paths) */
     float *tau; /* shape (num_rx, num_tx, num_paths) */
+    float *freq_shift; /* shape (num_rx, num_tx, num_paths) */
 } PathsInfo;
 
 /** Compute gains and delays between tx and rx in a 3D scene.
