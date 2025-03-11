@@ -13,7 +13,10 @@ typedef struct {
   uint32_t num_triangles;
   /* Triangles indices. Size [num_triangles * 3] */
   uint32_t *is;
+  /* Index of the material in g_hrt_materials array defined in scene.h */
   uint32_t material_index;
+  /* Global cartesian velocity vector. Size [3] */
+  float velocity[3];
 } HRT_Mesh;
 
 typedef struct {

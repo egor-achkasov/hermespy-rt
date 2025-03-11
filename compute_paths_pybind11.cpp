@@ -1,6 +1,10 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 
+#include <complex>
+#include <vector>
+#include <iostream>
+
 #ifdef _WIN32
 extern "C" {
     #include "compute_paths.h"
@@ -11,23 +15,62 @@ extern "C" {
 
 namespace py = pybind11;
 
-// Helper function to create a numpy array from a C array
-py::array_t<float> make_py_array(std::vector<size_t> shape, float *data) {
-    return py::array_t<float>(shape, data);
+// Helper function to create a complex numpy array from two C arrays
+py::array_t<std::complex<float>> make_complex_array(
+    const float* real,
+    const float* imag,
+    size_t num_rx,
+    size_t num_tx,
+    size_t num_paths
+) {
+    size_t total_size = num_rx * num_tx * num_paths;
+    std::complex<float>* complex_data = new std::complex<float>[total_size];
+
+    for (size_t i = 0; i < total_size; ++i)
+        complex_data[i] = std::complex<float>(real[i], imag[i]);
+
+    auto capsule = py::capsule(complex_data, [](void* ptr) {
+        delete[] static_cast<std::complex<float>*>(ptr);
+    });
+    
+    return py::array_t<std::complex<float>>(
+        {num_rx, num_tx, num_paths}, complex_data, capsule
+    );
 }
 
-std::tuple<
-  py::array_t<float>,                      // directions_los
-  py::array_t<float>, py::array_t<float>,  // a_te_re_los, a_te_im_los
-  py::array_t<float>, py::array_t<float>,  // a_tm_re_los, a_tm_im_los
-  py::array_t<float>,                      // tau_los
+class PathsInfoPython {
+public:
+    size_t num_paths;
+    py::array_t<float> directions_rx;
+    py::array_t<float> directions_tx;
+    py::array_t<std::complex<float>> a_te;
+    py::array_t<std::complex<float>> a_tm;
+    py::array_t<float> tau;
 
-  py::array_t<float>,                      // directions_rx_scat
-  py::array_t<float>,                      // directions_tx_scat
-  py::array_t<float>, py::array_t<float>,  // a_te_re_scat, a_te_im_scat
-  py::array_t<float>, py::array_t<float>,  // a_tm_re_scat, a_tm_im_scat
-  py::array_t<float>                       // tau_scat
->
+    PathsInfoPython(const PathsInfo& paths, size_t num_rx, size_t num_tx) {
+        num_paths = paths.num_paths;
+
+        auto capsule_deleter = [](void* ptr) { delete[] static_cast<float*>(ptr); };
+
+        directions_rx = py::array_t<float>(
+            std::vector<size_t>{num_rx, num_tx, (size_t)paths.num_paths, 3},
+            paths.directions_rx,
+            py::capsule(paths.directions_rx, capsule_deleter)
+        );
+        directions_tx = py::array_t<float>(
+            std::vector<size_t>{num_rx, num_tx, (size_t)paths.num_paths, 3},
+            paths.directions_tx,
+            py::capsule(paths.directions_tx, capsule_deleter)
+        );
+
+        a_te = make_complex_array(paths.a_te_re, paths.a_te_im, num_rx, num_tx, paths.num_paths);
+        a_tm = make_complex_array(paths.a_tm_re, paths.a_tm_im, num_rx, num_tx, paths.num_paths);
+
+        tau = py::array_t<float>({num_rx, num_tx, (size_t)paths.num_paths}, paths.tau, py::capsule(paths.tau, capsule_deleter));
+    }
+};
+
+std::tuple<PathsInfoPython, PathsInfoPython>
 compute_paths_wrapper(
     const std::string &mesh_filepath,
     py::array_t<float> rx_positions,
@@ -47,19 +90,26 @@ compute_paths_wrapper(
     py::buffer_info tx_vel_info = tx_velocities.request();
 
     // Output
-    float *directions_los = new float[num_rx * num_tx * 3];
-    float *a_te_re_los = new float[num_rx * num_tx];
-    float *a_te_im_los = new float[num_rx * num_tx];
-    float *a_tm_re_los = new float[num_rx * num_tx];
-    float *a_tm_im_los = new float[num_rx * num_tx];
-    float *tau_los = new float[num_rx * num_tx];
-    float *directions_rx_scat = new float[num_rx * num_tx * num_bounces * num_paths * 3];
-    float *directions_tx_scat = new float[num_paths * 3];
-    float *a_te_re_scat = new float[num_rx * num_tx * num_bounces * num_paths];
-    float *a_te_im_scat = new float[num_rx * num_tx * num_bounces * num_paths];
-    float *a_tm_re_scat = new float[num_rx * num_tx * num_bounces * num_paths];
-    float *a_tm_im_scat = new float[num_rx * num_tx * num_bounces * num_paths];
-    float *tau_scat = new float[num_rx * num_tx * num_bounces * num_paths];
+    PathsInfo los = {
+        .num_paths = 1,
+        .directions_rx = new float[num_rx * num_tx * 3],
+        .directions_tx = new float[num_rx * num_tx * 3],
+        .a_te_re = new float[num_rx * num_tx],
+        .a_te_im = new float[num_rx * num_tx],
+        .a_tm_re = new float[num_rx * num_tx],
+        .a_tm_im = new float[num_rx * num_tx],
+        .tau = new float[num_rx * num_tx]
+    };
+    PathsInfo scatter = {
+        .num_paths = (uint32_t)(num_bounces * num_paths),
+        .directions_rx = new float[num_rx * num_tx * num_bounces * num_paths * 3],
+        .directions_tx = new float[num_rx * num_tx * num_bounces * num_paths * 3],
+        .a_te_re = new float[num_rx * num_tx * num_bounces * num_paths],
+        .a_te_im = new float[num_rx * num_tx * num_bounces * num_paths],
+        .a_tm_re = new float[num_rx * num_tx * num_bounces * num_paths],
+        .a_tm_im = new float[num_rx * num_tx * num_bounces * num_paths],
+        .tau = new float[num_rx * num_tx * num_bounces * num_paths]
+    };
 
     // Call the C function
     compute_paths(
@@ -73,44 +123,28 @@ compute_paths_wrapper(
         (size_t)num_tx,
         (size_t)num_paths,
         (size_t)num_bounces,
-        // LoS outputs
-        directions_los,
-        a_te_re_los,
-        a_te_im_los,
-        a_tm_re_los,
-        a_tm_im_los,
-        tau_los,
-        // Scatter outputs
-        directions_rx_scat,
-        directions_tx_scat,
-        a_te_re_scat,
-        a_te_im_scat,
-        a_tm_re_scat,
-        a_tm_im_scat,
-        tau_scat
+        &los,
+        &scatter
     );
 
-    // Cast to numpy arrays and return
+    // Wrap the results into Python objects
     return std::make_tuple(
-      make_py_array({num_rx, num_tx, 3}, directions_los),
-      make_py_array({num_rx, num_tx}, a_te_re_los),
-      make_py_array({num_rx, num_tx}, a_te_im_los),
-      make_py_array({num_rx, num_tx}, a_tm_re_los),
-      make_py_array({num_rx, num_tx}, a_tm_im_los),
-      make_py_array({num_rx, num_tx}, tau_los),
-      make_py_array({num_rx, num_tx, num_bounces * num_paths, 3}, directions_rx_scat),
-      make_py_array({num_paths, 3}, directions_tx_scat),
-      make_py_array({num_rx, num_tx, num_bounces * num_paths}, a_te_re_scat),
-      make_py_array({num_rx, num_tx, num_bounces * num_paths}, a_te_im_scat),
-      make_py_array({num_rx, num_tx, num_bounces * num_paths}, a_tm_re_scat),
-      make_py_array({num_rx, num_tx, num_bounces * num_paths}, a_tm_im_scat),
-      make_py_array({num_rx, num_tx, num_bounces * num_paths}, tau_scat)
+        PathsInfoPython(los, num_rx, num_tx),
+        PathsInfoPython(scatter, num_rx, num_tx)
     );
 }
 
 PYBIND11_MODULE(rt, m) {
+    py::class_<PathsInfoPython>(m, "PathsInfo")
+        .def_readonly("num_paths", &PathsInfoPython::num_paths)
+        .def_readonly("directions_rx", &PathsInfoPython::directions_rx)
+        .def_readonly("directions_tx", &PathsInfoPython::directions_tx)
+        .def_readonly("a_te", &PathsInfoPython::a_te)
+        .def_readonly("a_tm", &PathsInfoPython::a_tm)
+        .def_readonly("tau", &PathsInfoPython::tau);
+
     // TODO write a proper docstring
-    m.def("compute_paths", &compute_paths_wrapper, "Compute gains and delays in PLY scene",
+    m.def("compute_paths", &compute_paths_wrapper, "Compute gains and delays",
           py::arg("mesh_filepath"),
           py::arg("rx_positions"),
           py::arg("tx_positions"),
@@ -121,10 +155,4 @@ PYBIND11_MODULE(rt, m) {
           py::arg("num_tx"),
           py::arg("num_paths"),
           py::arg("num_bounces"));
-
-    // Scene filepaths
-    // TODO
-    m.def("get_scene_fp_box",
-        []() { return __FILE__ + std::string("/scenes/box.ply"); }
-    );
 }

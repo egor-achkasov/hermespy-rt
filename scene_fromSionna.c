@@ -44,6 +44,7 @@ HRT_Mesh mesh_box = {
   .num_triangles = 12,
   .is = (uint32_t*)mesh_box_is,
   .material_index = MATERIAL_CONCRETE,
+  .velocity = {0.f, 0.f, 0.f},
 };
 HRT_Scene scene_box = {
   .num_meshes = 1,
@@ -68,6 +69,7 @@ HRT_Mesh mesh_simpleReflector = {
   .num_triangles = 2,
   .is = (uint32_t*)mesh_simpleReflector_is,
   .material_index = MATERIAL_CONCRETE,
+  .velocity = {0.f, 0.f, 0.f},
 };
 HRT_Scene scene_simpleReflector = {
   .num_meshes = 1,
@@ -110,7 +112,8 @@ HRT_Mesh readPly(const char* filepath) {
     .vs = NULL,
     .num_triangles = 0,
     .is = NULL,
-    .material_index = 0
+    .material_index = 0,
+    .velocity = {0.f, 0.f, 0.f},
   };
 
   /* read header */
@@ -184,18 +187,128 @@ free_and_error:
   exit(8);
 }
 
+/** Read a scene config CSV file.
+ * 
+ * The CSV file must be a text file with the following format:
+ * material_index,velocity_x,velocity_y,velocity_z
+ * 
+ * The file can have any number of lines except the first one, which is the header.
+ * If a mesh is not in the CSV file,
+ * it will have the default (0) material index and velocity.
+ *
+ * \param filepath Path to the CSV file
+ * \param num_meshes Output number of meshes in the CSV file
+ * \param mesh_filenames Output array of mesh filenames
+ * \param material_indicies Output array of material indicies
+ * \param velocity Output array of velocities. Size [num_meshes * 3]
+ */
+void readCsv(
+  const char* filepath,
+  uint32_t* num_meshes,
+  char** mesh_filenames,
+  uint32_t* material_indicies,
+  float* velocity
+)
+{
+  FILE* f = fopen(filepath, "r");
+  if (f == NULL) {
+    perror("Error: cannot open file");
+    exit(8);
+  }
+
+  /* Check header */
+  char buf[256];
+  if (fgets(buf, 256, f) == NULL) {
+    perror("Error: cannot read header");
+    exit(8);
+  }
+  if (strncmp(buf, "material_index,velocity_x,velocity_y,velocity_z\n", 48)) {
+    perror("Error: invalid header");
+    exit(8);
+  }
+
+  /* Count number of lines */
+  *num_meshes = 0;
+  while (fgets(buf, 256, f))
+    ++(*num_meshes);
+  /* Return to the beginning of the file */
+  rewind(f);
+  /* Skip header */
+  if (fgets(buf, 256, f) == NULL) {
+    perror("Error: cannot read header");
+    exit(8);
+  }
+
+  /* Allocate memory for the arrays */
+  mesh_filenames = (char**)malloc(*num_meshes * sizeof(char*));
+  material_indicies = (uint32_t*)malloc(*num_meshes * sizeof(uint32_t));
+  velocity = (float*)malloc(*num_meshes * 3 * sizeof(float));
+
+  /* Read lines */
+  for (uint32_t i = 0; i != *num_meshes; ++i) {
+    /* Read line */
+    if (fgets(buf, 256, f) == NULL) {
+      perror("Error: cannot read line");
+      exit(8);
+    }
+    /* Parse line */
+    char name[50];
+    int rc = sscanf(
+      buf,
+      "%49[^,],%u,%f,%f,%f\n",
+      name,
+      &material_indicies[i],
+      &velocity[i * 3],
+      &velocity[i * 3 + 1],
+      &velocity[i * 3 + 2]
+    );
+    if (rc != 4) {
+      perror("Error: cannot parse line");
+      exit(8);
+    }
+    /* Copy name */
+    mesh_filenames[i] = (char*)malloc(strlen(name) + 1);
+    if (mesh_filenames[i] == NULL) {
+      perror("Error: cannot allocate memory for mesh filename");
+      exit(8);
+    }
+    strcpy(mesh_filenames[i], name);
+  }
+}
+
+
 /* Read a Sionna .xml scene. Assumes meshes are in a "meshes" directory.
  *
  * \param filepath Path to the .xml scene file
  * \param scene The scene to fill
  */
-void read_scene(const char* filepath, HRT_Scene* scene) {
+void readScene(const char* filepath, HRT_Scene* scene) {
   /* Check if filepath ends with ".xml" */
   size_t filepath_len = strlen(filepath);
   if (filepath_len > 4 && strcmp(filepath + filepath_len - 4, ".xml") != 0) {
     perror("Error: scene file must end with .xml");
     exit(8);
   }
+
+  /* Read the scene config CSV file */
+  char* csv_path = (char*)malloc(filepath_len + 1);
+  if (!csv_path) {
+    perror("Error: failed to allocate csv_path");
+    exit(8);
+  }
+  strcpy(csv_path, filepath);
+  strcpy(csv_path + filepath_len - 4, ".csv");
+  uint32_t csv_num_meshes;
+  char** csv_mesh_filenames;
+  uint32_t* csv_material_indicies;
+  float* csv_velocity;
+  readCsv(
+    csv_path,
+    &csv_num_meshes,
+    csv_mesh_filenames,
+    csv_material_indicies,
+    csv_velocity
+  );
 
   /* Get the meshes directory path */
   const char* last_slash = strrchr(filepath, '/');
@@ -264,8 +377,18 @@ void read_scene(const char* filepath, HRT_Scene* scene) {
 
     /* Read mesh */
     scene->meshes[mesh_idx] = readPly(ply_path);
-    ++mesh_idx;
 
+    /* Get material index and velocity from the CSV file */
+    for (uint32_t i = 0; i != csv_num_meshes; ++i)
+      if (strcmp(entry->d_name, csv_mesh_filenames[i]) == 0) {
+        scene->meshes[mesh_idx].material_index = csv_material_indicies[i];
+        scene->meshes[mesh_idx].velocity[0] = csv_velocity[i * 3];
+        scene->meshes[mesh_idx].velocity[1] = csv_velocity[i * 3 + 1];
+        scene->meshes[mesh_idx].velocity[2] = csv_velocity[i * 3 + 2];
+        break;
+      }
+
+    ++mesh_idx;
     free(ply_path);
   }
 
@@ -301,7 +424,7 @@ int main(int argc, char *argv[]) {
     scene_ptr = &scene_simpleReflector;
   else {
     scene_ptr = (HRT_Scene*)malloc(sizeof(HRT_Scene));
-    read_scene(scene_filepath, scene_ptr);
+    readScene(scene_filepath, scene_ptr);
   }
 
   FILE *fp = fopen("scene.hrt", "wb");
@@ -323,6 +446,7 @@ int main(int argc, char *argv[]) {
     fwrite(&scene_ptr->meshes[i].num_triangles, sizeof(uint32_t), 1, fp);
     fwrite(scene_ptr->meshes[i].is, sizeof(uint32_t), 3 * scene_ptr->meshes[i].num_triangles, fp);
     fwrite(&scene_ptr->meshes[i].material_index, sizeof(uint32_t), 1, fp);
+    fwrite(&scene_ptr->meshes[i].velocity, sizeof(float), 3, fp);
   }
 
   fclose(fp);

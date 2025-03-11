@@ -142,6 +142,7 @@ typedef struct {
   /* Normals. Size [num_triangles] */
   Vec3 *ns;
   uint32_t material_index;
+  float velocity[3];
 } Mesh;
 
 typedef struct {
@@ -266,6 +267,8 @@ Scene load_scene(const char *scene_filepath, float carrier_frequency)
       exit(8);
     /* material_index */
     if (fread(&mesh->material_index, sizeof(uint32_t), 1, f) != 1) exit(8);
+    /* velocity */
+    if (fread(&mesh->velocity, sizeof(float), 3, f) != 3) exit(8);
   }
   fclose(f);
 
@@ -515,21 +518,8 @@ void compute_paths(
   IN size_t num_tx,               /* number of transmitters */
   IN size_t num_paths,            /* number of paths */
   IN size_t num_bounces,          /* number of bounces */
-  /* LoS */
-  OUT float *directions_los,      /* output array of directions (num_rx, num_tx, 3) */
-  OUT float *a_te_re_los,         /* output array real parts of TE gains (num_rx, num_tx) */
-  OUT float *a_te_im_los,         /* output array imaginary parts of TE gains (num_rx, num_tx) */
-  OUT float *a_tm_re_los,         /* output array real parts of TM gains (num_rx, num_tx) */
-  OUT float *a_tm_im_los,         /* output array imaginary parts of TM gains (num_rx, num_tx) */
-  OUT float *tau_los,             /* output array of delays (num_rx, num_tx) */
-  /* Scatter */
-  OUT float *directions_rx_scat,  /* output array of directions for rx (num_rx, num_tx, num_bounces * num_paths, 3) */
-  OUT float *directions_tx_scat,  /* output array of directions for tx (num_paths, 3) */
-  OUT float *a_te_re_scat,        /* output array real parts of TE gains (num_rx, num_tx, num_bounces * num_paths) */
-  OUT float *a_te_im_scat,        /* output array imaginary parts of TE gains (num_rx, num_tx, num_bounces * num_paths) */
-  OUT float *a_tm_re_scat,        /* output array real parts of TM gains (num_rx, num_tx, num_bounces * num_paths) */
-  OUT float *a_tm_im_scat,        /* output array imaginary parts of TM gains (num_rx, num_tx, num_bounces * num_paths) */
-  OUT float *tau_scat             /* output array of delays (num_rx, num_tx, num_bounces * num_paths) */
+  OUT PathsInfo *los,             /* output LoS information */
+  OUT PathsInfo *scatter          /* output scatter information */
 )
 {
   /* Load the scene */
@@ -555,7 +545,15 @@ void compute_paths(
 
   /* Record the tx directions */
   /* This is only valid for the fibbonaci sphere */
-  directions_tx_scat = (float*)ray_directions;
+  scatter->directions_tx = (float*)memcpy(
+    scatter->directions_tx,
+    ray_directions,
+    num_paths * sizeof(Vec3)
+  );
+  if (scatter->directions_tx == NULL) {
+    fprintf(stderr, "Failed to copy memory to scatter->directions_tx\n");
+    exit(70);
+  }
 
   /* Cast the positions and velocities to Vec3 */
   Vec3 *rx_pos_v = (Vec3*)rx_pos;
@@ -612,7 +610,7 @@ void compute_paths(
 
   /* Consider imaginary parts of the LoS gains to be 0 in any way */
   for (size_t off = 0; off != num_rx * num_tx; ++off)
-    a_te_im_los[off] = a_tm_im_los[off] = 0.f;
+    los->a_te_im[off] = los->a_tm_im[off] = 0.f;
 
   /* Calculate LoS paths directly from tx to rx */
   for (size_t rx = 0, off = 0; rx != num_rx; ++rx)
@@ -627,13 +625,14 @@ void compute_paths(
       /* In case the tx and the rx are at the same position */
       if (vec3_dot(&r.d, &r.d) < __FLT_EPSILON__) {
         /* Assume the direction to be (1, 0, 0) */
-        directions_los[off * 3] = 1.f;
-        directions_los[off * 3 + 1] = 0.f;
-        directions_los[off * 3 + 2] = 0.f;
+        los->directions_rx[off * 3] = 1.f;
+        los->directions_tx[off * 3] = -1.f;
+        los->directions_rx[off * 3 + 1] = los->directions_tx[off * 3 + 1] = 0.f;
+        los->directions_rx[off * 3 + 2] = los->directions_tx[off * 3 + 2] = 0.f;
         /* Set gains to 1+0j */
-        a_te_re_los[off] = a_tm_re_los[off] = 1.f;
+        los->a_te_re[off] = los->a_tm_re[off] = 1.f;
         /* Set delay to 0 */
-        tau_los[off] = 0.f;
+        los->tau[off] = 0.f;
         continue;
       }
 
@@ -641,7 +640,7 @@ void compute_paths(
       moeller_trumbore(&r, &scene, &t, &mesh_ind, &face_ind, &theta);
       if (mesh_ind != (uint32_t)-1 && t <= 1.f) {
         /* An obstacle between the tx and the rx has been hit */
-        a_te_re_los[off] = a_tm_re_los[off] = tau_los[off] = 0.f;
+        los->a_te_re[off] = los->a_tm_re[off] = los->tau[off] = 0.f;
         continue;
       }
 
@@ -649,18 +648,21 @@ void compute_paths(
       /* Calculate the distance */
       t = sqrtf(vec3_dot(&r.d, &r.d));
       /* Calculate the direction */
-      directions_los[off * 3] = -r.d.x / t;
-      directions_los[off * 3 + 1] = -r.d.y / t;
-      directions_los[off * 3 + 2] = -r.d.z / t;
+      los->directions_tx[off * 3] = r.d.x / t;
+      los->directions_tx[off * 3 + 1] = r.d.y / t;
+      los->directions_tx[off * 3 + 2] = r.d.z / t;
+      los->directions_rx[off * 3] = -los->directions_tx[off * 3];
+      los->directions_rx[off * 3 + 1] = -los->directions_tx[off * 3 + 1];
+      los->directions_rx[off * 3 + 2] = -los->directions_tx[off * 3 + 2];
       /* Calculate the free space loss */
       free_space_loss = free_space_loss_multiplier * t;
       if (free_space_loss > 1.f) {
-        a_te_re_los[off] = 1.f / free_space_loss;
-        a_tm_re_los[off] = 1.f / free_space_loss;
+        los->a_te_re[off] = 1.f / free_space_loss;
+        los->a_tm_re[off] = 1.f / free_space_loss;
       } else
-        a_te_re_los[off] = a_tm_re_los[off] = 1.f;
+        los->a_te_re[off] =los-> a_tm_re[off] = 1.f;
       /* Calculate the delay */
-      tau_los[off] = t / SPEED_OF_LIGHT;
+      los->tau[off] = t / SPEED_OF_LIGHT;
     }
 
   /***************************************************************************/
@@ -775,8 +777,11 @@ void compute_paths(
           moeller_trumbore(&r_scat, &scene, &t, &mesh_ind, &face_ind, &theta);
           if (mesh_ind != (uint32_t)-1 && t <= 1.f) {
             /* An obstacle between the hit point and the rx has been hit */
-            a_te_re_scat[off_scat] = a_te_im_scat[off_scat] = a_tm_re_scat[off_scat]
-                                  = a_tm_im_scat[off_scat] = tau_scat[off_scat] = 0.f;
+            scatter->a_te_re[off_scat] = scatter->a_te_im[off_scat]
+                                       = scatter->a_tm_re[off_scat]
+                                       = scatter->a_tm_im[off_scat]
+                                       = scatter->tau[off_scat]
+                                       = 0.f;
             continue;
           }
           /* No obstacle has been hit */
@@ -786,28 +791,28 @@ void compute_paths(
           float a_te_re_new, a_te_im_new, a_tm_re_new, a_tm_im_new;
           scat_coefs(theta_s, theta, material_index,
                      &a_te_re_new, &a_te_im_new, &a_tm_re_new, &a_tm_im_new);
-          a_te_re_scat[off_scat] = a_te_re_refl[off_tx_path] * a_te_re_new
-                                 - a_te_im_refl[off_tx_path] * a_te_im_new;
-          a_te_im_scat[off_scat] = a_te_re_refl[off_tx_path] * a_te_im_new
-                                 + a_te_im_refl[off_tx_path] * a_te_re_new;
-          a_tm_re_scat[off_scat] = a_tm_re_refl[off_tx_path] * a_tm_re_new
-                                 - a_tm_im_refl[off_tx_path] * a_tm_im_new;
-          a_tm_im_scat[off_scat] = a_tm_re_refl[off_tx_path] * a_tm_im_new
-                                 + a_tm_im_refl[off_tx_path] * a_tm_re_new;
+          scatter->a_te_re[off_scat] = a_te_re_refl[off_tx_path] * a_te_re_new
+                                     - a_te_im_refl[off_tx_path] * a_te_im_new;
+          scatter->a_te_im[off_scat] = a_te_re_refl[off_tx_path] * a_te_im_new
+                                     + a_te_im_refl[off_tx_path] * a_te_re_new;
+          scatter->a_tm_re[off_scat] = a_tm_re_refl[off_tx_path] * a_tm_re_new
+                                     - a_tm_im_refl[off_tx_path] * a_tm_im_new;
+          scatter->a_tm_im[off_scat] = a_tm_re_refl[off_tx_path] * a_tm_im_new
+                                     + a_tm_im_refl[off_tx_path] * a_tm_re_new;
           /* Calculate the direction */
-          directions_rx_scat[off_scat * 3] = -r_scat.d.x;
-          directions_rx_scat[off_scat * 3 + 1] = -r_scat.d.y;
-          directions_rx_scat[off_scat * 3 + 2] = -r_scat.d.z;
+          scatter->directions_rx[off_scat * 3] = -r_scat.d.x;
+          scatter->directions_rx[off_scat * 3 + 1] = -r_scat.d.y;
+          scatter->directions_rx[off_scat * 3 + 2] = -r_scat.d.z;
           /* Calculate the delay */
-          tau_scat[off_scat] = tau_t[off_tx_path] + dist2rx / SPEED_OF_LIGHT;
+          scatter->tau[off_scat] = tau_t[off_tx_path] + dist2rx / SPEED_OF_LIGHT;
           /* Calculate the free space loss */
           free_space_loss = free_space_loss_multiplier * dist2rx;
           free_space_loss *= free_space_loss;
           if (free_space_loss > 1.f) {
-            a_te_re_scat[off_scat] /= free_space_loss;
-            a_te_im_scat[off_scat] /= free_space_loss;
-            a_tm_re_scat[off_scat] /= free_space_loss;
-            a_tm_im_scat[off_scat] /= free_space_loss;
+            scatter->a_te_re[off_scat] /= free_space_loss;
+            scatter->a_te_im[off_scat] /= free_space_loss;
+            scatter->a_tm_re[off_scat] /= free_space_loss;
+            scatter->a_tm_im[off_scat] /= free_space_loss;
           }
         }
 
