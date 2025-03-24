@@ -190,7 +190,7 @@ free_and_error:
 /** Read a scene config CSV file.
  * 
  * The CSV file must be a text file with the following format:
- * material_index,velocity_x,velocity_y,velocity_z
+ * name,material_index,velocity_x,velocity_y,velocity_z
  * 
  * The file can have any number of lines except the first one, which is the header.
  * If a mesh is not in the CSV file,
@@ -222,7 +222,7 @@ void readCsv(
     perror("Error: cannot read header");
     exit(8);
   }
-  if (strncmp(buf, "material_index,velocity_x,velocity_y,velocity_z\n", 48)) {
+  if (strncmp(buf, "name,material_index,velocity_x,velocity_y,velocity_z\n", 48)) {
     perror("Error: invalid header");
     exit(8);
   }
