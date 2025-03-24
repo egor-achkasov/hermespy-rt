@@ -518,8 +518,8 @@ void compute_paths(
   IN size_t num_tx,               /* number of transmitters */
   IN size_t num_paths,            /* number of paths */
   IN size_t num_bounces,          /* number of bounces */
-  OUT PathsInfo *los,             /* output LoS information */
-  OUT PathsInfo *scatter          /* output scatter information */
+  OUT PathsInfo *los,             /* output LoS information. los->num_paths = 1 */
+  OUT PathsInfo *scatter          /* output scatter information. scatter->num_paths = num_bounces*num_paths */
 )
 {
   /* Load the scene */
@@ -604,6 +604,29 @@ void compute_paths(
   float free_space_loss_multiplier = 4.f * PI * carrier_frequency * 1e9 / SPEED_OF_LIGHT;
   float free_space_loss;
 
+  /* Doppler frequency shift carrier frequency multiplier */
+  float doppler_shift_multiplier = carrier_frequency * 1e9 / SPEED_OF_LIGHT;
+
+  /* Initialize the doppler frequency shift using the tx velocities */
+  /* The scatter->freq_shift has the shape of (num_rx, num_tx, num_bounces*num_paths) */
+  /* The first num_tx*num_paths elements are the same for each rx and bounce */
+  /* so we can initialize them only once and memcpy them to the rest */
+  for (size_t tx = 0; tx != num_tx; ++tx)
+    for (size_t path = 0; path != num_paths; ++path) {
+      size_t off_rays = tx * num_paths + path;
+      size_t off_scat = tx * num_paths * num_bounces + path;
+      scatter->freq_shift[off_scat] = vec3_dot(&tx_vel_v[tx], &rays[off_rays].d);
+      scatter->freq_shift[off_scat] *= doppler_shift_multiplier;
+    }
+  for (size_t bounce = 1; bounce < num_bounces; ++bounce)
+    if (!memcpy(scatter->freq_shift + num_tx * num_paths * bounce,
+                scatter->freq_shift, num_tx * num_paths * sizeof(float)))
+      exit(70);
+  for (size_t rx = 1; rx < num_rx; ++rx)
+    if (!memcpy(scatter->freq_shift + num_tx * num_paths * num_bounces * rx,
+                scatter->freq_shift, num_tx * num_paths * num_bounces * sizeof(float)))
+      exit(70);
+
   /***************************************************************************/
   /*                                LoS paths                                */
   /***************************************************************************/
@@ -633,6 +656,8 @@ void compute_paths(
         los->a_te_re[off] = los->a_tm_re[off] = 1.f;
         /* Set delay to 0 */
         los->tau[off] = 0.f;
+        /* Set doppler shift to 0. */
+        los->freq_shift[off] = 0.f;
         continue;
       }
 
@@ -648,12 +673,13 @@ void compute_paths(
       /* Calculate the distance */
       t = sqrtf(vec3_dot(&r.d, &r.d));
       /* Calculate the direction */
-      los->directions_tx[off * 3] = r.d.x / t;
-      los->directions_tx[off * 3 + 1] = r.d.y / t;
-      los->directions_tx[off * 3 + 2] = r.d.z / t;
-      los->directions_rx[off * 3] = -los->directions_tx[off * 3];
-      los->directions_rx[off * 3 + 1] = -los->directions_tx[off * 3 + 1];
-      los->directions_rx[off * 3 + 2] = -los->directions_tx[off * 3 + 2];
+      Vec3 d = {r.d.x / t, r.d.y / t, r.d.z / t};
+      los->directions_tx[off * 3] = d.x;
+      los->directions_tx[off * 3 + 1] = d.y;
+      los->directions_tx[off * 3 + 2] = d.z;
+      los->directions_rx[off * 3] = -d.x;
+      los->directions_rx[off * 3 + 1] = -d.y;
+      los->directions_rx[off * 3 + 2] = -d.z;
       /* Calculate the free space loss */
       free_space_loss = free_space_loss_multiplier * t;
       if (free_space_loss > 1.f) {
@@ -663,6 +689,9 @@ void compute_paths(
         los->a_te_re[off] =los-> a_tm_re[off] = 1.f;
       /* Calculate the delay */
       los->tau[off] = t / SPEED_OF_LIGHT;
+      /* Calculate the doppler shift */
+      los->freq_shift[off] = vec3_dot(tx_vel_v, &d) - vec3_dot(rx_vel_v, &d);
+      los->freq_shift[off] *= carrier_frequency * 1e9 / SPEED_OF_LIGHT;
     }
 
   /***************************************************************************/
@@ -758,6 +787,12 @@ void compute_paths(
         /* Advance the ray origin a bit to avoid intersection with the same triangle */
         *h = vec3_scale(&r.d, 1e-4f); 
         r.o = vec3_add(&r.o, h);
+
+        /* Calculate the doppler shift caused by the reflection */
+        Vec3* mesh_vel = (Vec3*)&scene.meshes[mesh_ind].velocity;
+        Vec3 d_rd = vec3_sub(&r.d, &rays[off_tx_path].d);
+        scatter->freq_shift[off_tx_path] += vec3_dot(&d_rd, mesh_vel) * doppler_shift_multiplier;
+
         /* Save the reflected ray */
         rays[off_tx_path] = r;
 
@@ -768,10 +803,13 @@ void compute_paths(
         /* Scatter a path from the hit point towards the rx */
         Ray r_scat = { .o = r.o };
         for (size_t rx = 0; rx < num_rx; ++rx) {
+          /* [rx, tx, bounce, path] */
           size_t off_scat = ((rx * num_tx + tx) * num_bounces + bounce) * num_paths + path;
+          /* Create a ray from the hit point to the rx */
           r_scat.d = vec3_sub(&rx_pos_v[rx], &r_scat.o);
-          float dist2rx = sqrtf(vec3_dot(&r_scat.d, &r_scat.d));
+          float d2rx = sqrtf(vec3_dot(&r_scat.d, &r_scat.d));
           r_scat.d = vec3_normalize(&r_scat.d);
+          /* Check if the ray has a LoS of the rx */
           t = -1.f;
           mesh_ind = face_ind = -1;
           moeller_trumbore(&r_scat, &scene, &t, &mesh_ind, &face_ind, &theta);
@@ -804,9 +842,9 @@ void compute_paths(
           scatter->directions_rx[off_scat * 3 + 1] = -r_scat.d.y;
           scatter->directions_rx[off_scat * 3 + 2] = -r_scat.d.z;
           /* Calculate the delay */
-          scatter->tau[off_scat] = tau_t[off_tx_path] + dist2rx / SPEED_OF_LIGHT;
+          scatter->tau[off_scat] = tau_t[off_tx_path] + d2rx / SPEED_OF_LIGHT;
           /* Calculate the free space loss */
-          free_space_loss = free_space_loss_multiplier * dist2rx;
+          free_space_loss = free_space_loss_multiplier * d2rx;
           free_space_loss *= free_space_loss;
           if (free_space_loss > 1.f) {
             scatter->a_te_re[off_scat] /= free_space_loss;
@@ -814,6 +852,10 @@ void compute_paths(
             scatter->a_tm_re[off_scat] /= free_space_loss;
             scatter->a_tm_im[off_scat] /= free_space_loss;
           }
+          /* Calculate the doppler shift */
+          Vec3 d_rd = vec3_sub(&r_scat.d, &rays[off_tx_path].d);
+          float freq_shift = vec3_dot(&d_rd, mesh_vel) * doppler_shift_multiplier;
+          scatter->freq_shift[off_scat] -= freq_shift;
         }
 
         /***********************************************************************/

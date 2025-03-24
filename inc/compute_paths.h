@@ -17,7 +17,7 @@ typedef struct {
     float *a_tm_re; /* shape (num_rx, num_tx, num_paths) */
     float *a_tm_im; /* shape (num_rx, num_tx, num_paths) */
     float *tau; /* shape (num_rx, num_tx, num_paths) */
-    float *freq_shift; /* shape (num_rx, num_tx, num_paths) */
+    float *freq_shift; /* Hz, shape (num_rx, num_tx, num_paths) */
 } PathsInfo;
 
 /** Compute gains and delays between tx and rx in a 3D scene.
@@ -28,6 +28,8 @@ typedef struct {
  * See README for details.
  * 
  * The output PathInfo structure is defined in compute_paths.h
+ * 
+ * The output parameters are allocated by the caller (including the fields).
  * 
  * \param scene_filepath path to a scene .hrt file
  * \param rx_pos receiver positions, shape (num_rx, 3)
