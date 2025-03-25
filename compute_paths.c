@@ -1,5 +1,6 @@
-#include "compute_paths.h" /* for compute_paths */
-#include "scene.h" /* for HRT_Scene, HRT_mesh, HRT_Material */
+#include "inc/compute_paths.h" /* for compute_paths */
+#include "inc/scene.h" /* for HRT_Scene, HRT_mesh, HRT_Material */
+#include "inc/materials.h" /* for g_hrt_materials */
 
 #include <stddef.h> /* for size_t */
 #include <stdlib.h> /* for exit, malloc, free */
