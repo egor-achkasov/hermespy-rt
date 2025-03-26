@@ -1,4 +1,7 @@
-#include "test.h" /* for g_numPaths, g_numBounces, g_numTx, g_numRx */
+#include "../inc/vec3.h" /* for Vec3 */
+#include "../inc/scene.h" /* for Scene, Mesh, scene_load */
+
+#include "../test/test.h" /* for g_numPaths, g_numBounces, g_numTx, g_numRx */
 
 #include <GL/glut.h>
 #include <stdio.h>
@@ -12,27 +15,11 @@
  */
 
 typedef struct {
-  float x, y, z;
-} Vec3;
-
-typedef struct {
   Vec3 o, t;
   float d;
   float lastX, lastY;
-  float yaw, pitch;
+  float yaw, pitch, roll;
 } Camera;
-
-typedef struct {
-  uint32_t num_vertices;
-  Vec3* vs;
-  uint32_t num_triangles;
-  uint32_t* is;
-} Mesh;
-
-typedef struct {
-  uint32_t num_meshes;
-  Mesh* meshes;
-} Scene;
 
 /**
  * Globals
@@ -43,7 +30,7 @@ Camera g_cam = {
   {0.f, 0.f, 0.f},
   5.f,
   0.f, 0.f,
-  0.f, 0.f
+  0.f, 0.f, 0.f
 };
 uint8_t g_mouseDown = 0;
 
@@ -52,7 +39,7 @@ uint8_t *g_active = NULL;
 
 Scene g_scene = {0};
 
-int g_bounce_cur = 0;
+uint32_t g_bounce_cur = 0;
 
 /**
  * Loading functions
@@ -88,70 +75,16 @@ void loadRays(const char* filename) {
   fclose(file);
 }
 
-void loadScene(const char* filename) {
-  FILE* file = fopen(filename, "rb");
-  if (!file) {
-    printf("Failed to open file\n");
-    exit(8);
-  }
-
-  /* Magic */
-  char magic[3];
-  if (fread(magic, 1, 3, file) != 3) {
-    printf("Failed to read magic\n");
-    exit(8);
-  }
-  if (magic[0] != 'H' || magic[1] != 'R' || magic[2] != 'T') {
-    printf("Invalid file format\n");
-    exit(8);
-  }
-
-  /* Scene */
-  if (fread(&g_scene.num_meshes, sizeof(uint32_t), 1, file) != 1) {
-    printf("Failed to read num_meshes\n");
-    exit(8);
-  }
-  g_scene.meshes = (Mesh*)malloc(g_scene.num_meshes * sizeof(Mesh));
-
-  /* Meshes */
-  for (Mesh* mesh = g_scene.meshes;
-       mesh != g_scene.meshes + g_scene.num_meshes;
-       ++mesh)
-  {
-    if (fread(&mesh->num_vertices, sizeof(uint32_t), 1, file) != 1) {
-      printf("Failed to read num_vertices\n");
-      exit(8);
-    }
-    mesh->vs = (Vec3*)malloc(mesh->num_vertices * sizeof(Vec3));
-    if (fread(mesh->vs, sizeof(Vec3), mesh->num_vertices, file) != mesh->num_vertices) {
-      printf("Failed to read vertices\n");
-      exit(8);
-    }
-    if (fread(&mesh->num_triangles, sizeof(uint32_t), 1, file) != 1) {
-      printf("Failed to read num_triangles\n");
-      exit(8);
-    }
-    mesh->is = (uint32_t*)malloc(mesh->num_triangles * 3 * sizeof(uint32_t));
-    if (fread(mesh->is, sizeof(uint32_t), mesh->num_triangles * 3, file) != mesh->num_triangles * 3) {
-      printf("Failed to read indices\n");
-      exit(8);
-    }
-    fseek(file, sizeof(uint32_t), SEEK_CUR); /* Skip material index */
-  }
-  fclose(file);
-}
-
 /**
  * Draw functions
  */
 
 void drawScene() {
-  glColor3f(1.0f, 1.0f, 1.0f);
   glBegin(GL_TRIANGLES);
   for (uint32_t i = 0; i < g_scene.num_meshes; i++) {
     Mesh* mesh = &g_scene.meshes[i];
     float mesh_color = (float)i / g_scene.num_meshes;
-    glColor3f(0.f, mesh_color, 1.f - mesh_color);
+    glColor3f(mesh_color, 1.f - mesh_color, 0.f);
 
     for (uint32_t j = 0; j < mesh->num_triangles; j++) {
       uint32_t idx = mesh->is[j * 3];
@@ -173,12 +106,12 @@ void drawRays() {
   glColor3f(color, 0.0f, 1.0f - color);
   
   glBegin(GL_LINES);
-  int idx_base = g_bounce_cur * g_numTx * g_numPaths * 2 * 3;
+  uint32_t idx_base = g_bounce_cur * g_numTx * g_numPaths * 2 * 3;
   uint32_t active_byte = g_bounce_cur * (g_numTx * g_numPaths / 8 + 1);
   uint8_t active_bit = 1;
   uint32_t num_skipped = 0;
-  for (int path = 0; path < g_numPaths; ++path, active_bit <<= 1) {
-    int idx = idx_base + path * 2 * 3;
+  for (uint32_t path = 0; path < g_numPaths; ++path, active_bit <<= 1) {
+    uint32_t idx = idx_base + path * 2 * 3;
 
     if (!active_bit) {
       active_byte++;
@@ -212,8 +145,8 @@ void drawRays() {
   glBegin(GL_POINTS);
   active_byte = g_bounce_cur * (g_numTx * g_numPaths / 8 + 1);
   active_bit = 1;
-  for (int path = 0; path < g_numPaths; ++path) {
-    int idx = idx_base + path * 2 * 3;
+  for (uint32_t path = 0; path < g_numPaths; ++path) {
+    uint32_t idx = idx_base + path * 2 * 3;
     if (!active_bit) {
       active_byte++;
       active_bit = 1;
@@ -262,17 +195,18 @@ void updateCamera() {
   g_cam.o.x = g_cam.t.x + x;
   g_cam.o.y = g_cam.t.y + y;
   g_cam.o.z = g_cam.t.z + z;
-  
+
   gluLookAt(g_cam.o.x, g_cam.o.y, g_cam.o.z,
             g_cam.t.x, g_cam.t.y, g_cam.t.z,
-            0.0f, 1.0f, 0.0f);
+            0.f, 1.f, 0.f);
 }
 
 void keyboard(unsigned char key, int x, int y) {
-  float speed = 0.1f;
+  float moveSpeed = 0.1f;
+  float tiltSpeed = 0.15f;
   /* Speed up if SHIFT is down */
   if (glutGetModifiers() & GLUT_ACTIVE_SHIFT) {
-    speed *= 5;
+    moveSpeed *= 5;
     key = tolower(key);
   }
   
@@ -291,21 +225,29 @@ void keyboard(unsigned char key, int x, int y) {
   
   switch (key) {
     case 'w': /* Move target forward */
-      g_cam.t.x += forward.x * speed;
-      g_cam.t.z += forward.z * speed;
+      g_cam.t.x += forward.x * moveSpeed;
+      g_cam.t.z += forward.z * moveSpeed;
       break;
     case 's': /* Move target backward */
-      g_cam.t.x -= forward.x * speed;
-      g_cam.t.z -= forward.z * speed;
+      g_cam.t.x -= forward.x * moveSpeed;
+      g_cam.t.z -= forward.z * moveSpeed;
       break;
     case 'a': /* Move target left */
-      g_cam.t.x += right.x * speed;
-      g_cam.t.z += right.z * speed;
+      g_cam.t.x += right.x * moveSpeed;
+      g_cam.t.z += right.z * moveSpeed;
       break;
     case 'd': /* Move target right */
-      g_cam.t.x -= right.x * speed;
-      g_cam.t.z -= right.z * speed;
+      g_cam.t.x -= right.x * moveSpeed;
+      g_cam.t.z -= right.z * moveSpeed;
       break;
+
+    case 'q': /* Roll left */
+      g_cam.roll += tiltSpeed;
+      break;
+    case 'e': /* Roll right */
+      g_cam.roll -= tiltSpeed;
+      break;
+
     case 'x': /* Increase g_curBounce */
       if (g_bounce_cur < g_numBounces) g_bounce_cur++;
       break;
@@ -368,7 +310,7 @@ int main(int argc, char** argv) {
   /* Load ray data */
   loadRays(rays_filename);
   if (argc > 1)
-    loadScene(argv[1]);
+    g_scene = scene_load(argv[1]);
   
   /* Initialize GLUT */
   glutInit(&argc, argv);

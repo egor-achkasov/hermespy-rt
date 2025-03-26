@@ -1,8 +1,9 @@
 /* vim: set tabstop=2:softtabstop=2:shiftwidth=2:noexpandtab */
 
-#include "inc/common.h" /* for IN, OUT, PERROR_CLEANUP_EXIT */
-#include "inc/scene.h" /* for HRT_Scene, HRT_Mesh, HRT_Material */
-#include "inc/materials.h" /* for g_hrt_materials, MATERIAL_CONCRETE */
+#include "../inc/vec3.h" /* for Vec3 */
+#include "../inc/common.h" /* for IN, OUT, PERROR_CLEANUP_EXIT */
+#include "../inc/scene.h" /* for Scene, Mesh, Material, scene_save */
+#include "../inc/materials.h" /* for g_hrt_materials, MATERIAL_CONCRETE */
 
 #include <stdio.h> /* for FILE, fopen, fclose, fseek, fgets, sscanf, printf */
 #include <stdlib.h> /* for malloc */
@@ -38,15 +39,15 @@ uint32_t mesh_box_is[] = {
   4, 7, 6,
   4, 6, 5,
 };
-HRT_Mesh mesh_box = {
+Mesh mesh_box = {
   .num_vertices = 8,
-  .vs = (float*)mesh_box_vs,
+  .vs = (Vec3*)mesh_box_vs,
   .num_triangles = 12,
   .is = (uint32_t*)mesh_box_is,
   .material_index = MATERIAL_CONCRETE,
   .velocity = {0.f, 0.f, 0.f},
 };
-HRT_Scene scene_box = {
+Scene scene_box = {
   .num_meshes = 1,
   .meshes = &mesh_box,
 };
@@ -63,15 +64,15 @@ uint32_t mesh_simpleReflector_is[] = {
   0, 1, 2,
   0, 2, 3,
 };
-HRT_Mesh mesh_simpleReflector = {
+Mesh mesh_simpleReflector = {
   .num_vertices = 4,
-  .vs = (float*)mesh_simpleReflector_vs,
+  .vs = (Vec3*)mesh_simpleReflector_vs,
   .num_triangles = 2,
   .is = (uint32_t*)mesh_simpleReflector_is,
   .material_index = MATERIAL_CONCRETE,
   .velocity = {0.f, 0.f, 0.f},
 };
-HRT_Scene scene_simpleReflector = {
+Scene scene_simpleReflector = {
   .num_meshes = 1,
   .meshes = &mesh_simpleReflector,
 };
@@ -99,13 +100,13 @@ const char* scene_simpleReflector_filename = "simple_reflector.xml";
  * \param filepath Path to the PLY file
  * \return The mesh
  */
-HRT_Mesh readPly(const char* filepath) {
+Mesh readPly(const char* filepath) {
   FILE* f = fopen(filepath, "rb");
   if (f == NULL)
     PERROR_CLEANUP_EXIT("Error: cannot open file", 8);
 
   char buf[256];
-  HRT_Mesh mesh = {
+  Mesh mesh = {
     .num_vertices = 0,
     .vs = NULL,
     .num_triangles = 0,
@@ -135,12 +136,12 @@ HRT_Mesh readPly(const char* filepath) {
     PERROR_CLEANUP_EXIT("Error: PLY element vertex or element face too big", 8);
 
   /* allocate memory for vertices and faces */
-  mesh.vs = (float*)malloc(3 * mesh.num_vertices * sizeof(float));
+  mesh.vs = (Vec3*)malloc(mesh.num_vertices * sizeof(Vec3));
   mesh.is = (uint32_t*)malloc(3 * mesh.num_triangles * sizeof(uint32_t));
 
   /* read vertices */
-  for (uint32_t i = 0; i != mesh.num_vertices * 3; i += 3) {
-    if (fread(&mesh.vs[i], sizeof(float), 3, f) != 3)
+  for (uint32_t i = 0; i != mesh.num_vertices; ++i) {
+    if (fread(&mesh.vs[i], sizeof(Vec3), 1, f) != 1)
       PERROR_CLEANUP_EXIT("Error: cannot read vertex", 8, mesh.vs, mesh.is);
     /* skip s and t */
     if (fseek(f, 8, SEEK_CUR) != 0)
@@ -175,14 +176,14 @@ HRT_Mesh readPly(const char* filepath) {
  * \param num_meshes Output number of meshes in the CSV file
  * \param mesh_filenames Output array of mesh filenames
  * \param material_indicies Output array of material indicies
- * \param velocity Output array of velocities. Size [num_meshes * 3]
+ * \param velocity Output array of velocity vectors. Size [num_meshes]
  */
 void readCsv(
   IN const char* filepath,
   OUT uint32_t* csv_num_meshes,
-  OUT char** csv_mesh_filenames,
-  OUT uint32_t* csv_material_indicies,
-  OUT float* csv_velocities
+  OUT char*** csv_mesh_filenames,
+  OUT uint32_t** csv_material_indicies,
+  OUT Vec3** csv_velocities
 )
 {
   FILE* f = fopen(filepath, "r");
@@ -211,9 +212,9 @@ void readCsv(
     PERROR_CLEANUP_EXIT("Error: cannot read header", 8);
 
   /* Allocate memory for the arrays */
-  csv_mesh_filenames = (char**)malloc(*csv_num_meshes * sizeof(char*));
-  csv_material_indicies = (uint32_t*)malloc(*csv_num_meshes * sizeof(uint32_t));
-  csv_velocities = (float*)malloc(*csv_num_meshes * 3 * sizeof(float));
+  *csv_mesh_filenames = (char**)malloc(*csv_num_meshes * sizeof(char*));
+  *csv_material_indicies = (uint32_t*)malloc(*csv_num_meshes * sizeof(uint32_t));
+  *csv_velocities = (Vec3*)malloc(*csv_num_meshes * sizeof(Vec3));
 
   /* Read lines */
   for (uint32_t i = 0; i != *csv_num_meshes; ++i) {
@@ -226,18 +227,18 @@ void readCsv(
       buf,
       "%49[^,],%u,%f,%f,%f\n",
       name,
-      &csv_material_indicies[i],
-      &csv_velocities[i * 3],
-      &csv_velocities[i * 3 + 1],
-      &csv_velocities[i * 3 + 2]
+      &(*csv_material_indicies)[i],
+      &(*csv_velocities)[i].x,
+      &(*csv_velocities)[i].y,
+      &(*csv_velocities)[i].z
     );
     if (rc != 4)
       PERROR_CLEANUP_EXIT("Error: cannot parse line", 8);
     /* Copy name */
-    csv_mesh_filenames[i] = (char*)malloc(strlen(name) + 1);
+    (*csv_mesh_filenames)[i] = (char*)malloc(strlen(name) + 1);
     if (!csv_mesh_filenames[i])
       PERROR_CLEANUP_EXIT("Error: cannot allocate memory for mesh filename", 8);
-    strcpy(csv_mesh_filenames[i], name);
+    strcpy((*csv_mesh_filenames)[i], name);
   }
 }
 
@@ -369,7 +370,7 @@ void readXml(
  * \param filepath Path to the .xml scene file
  * \param scene The scene to fill
  */
-void readScene(const char* filepath, HRT_Scene* scene) {
+void readScene(const char* filepath, Scene* scene) {
   /* Check if filepath ends with ".xml" */
   size_t filepath_len = strlen(filepath);
   if (filepath_len > 4 && strcmp(filepath + filepath_len - 4, ".xml") != 0)
@@ -397,13 +398,13 @@ void readScene(const char* filepath, HRT_Scene* scene) {
   uint32_t csv_num_meshes;
   char** csv_mesh_filenames;
   uint32_t* csv_material_indicies;
-  float* csv_velocity;
+  Vec3* csv_velocities;
   readCsv(
     csv_path,
     &csv_num_meshes,
-    csv_mesh_filenames,
-    csv_material_indicies,
-    csv_velocity
+    &csv_mesh_filenames,
+    &csv_material_indicies,
+    &csv_velocities
   );
   free(csv_path);
 
@@ -419,7 +420,7 @@ void readScene(const char* filepath, HRT_Scene* scene) {
 
   /* For each ply file from the xml file */
   scene->num_meshes = xml_num_meshes;
-  scene->meshes = (HRT_Mesh*)malloc(xml_num_meshes * sizeof(HRT_Mesh));
+  scene->meshes = (Mesh*)malloc(xml_num_meshes * sizeof(Mesh));
   if (!scene->meshes && xml_num_meshes > 0)
     PERROR_CLEANUP_EXIT("Error: failed to allocate meshes array", 8);
   for (uint32_t i = 0; i != xml_num_meshes; ++i) {
@@ -438,9 +439,7 @@ void readScene(const char* filepath, HRT_Scene* scene) {
     for (uint32_t j = 0; j != csv_num_meshes; ++j)
       if (strcmp(xml_mesh_names[i], csv_mesh_filenames[j]) == 0) {
         scene->meshes[i].material_index = csv_material_indicies[j];
-        scene->meshes[i].velocity[0] = csv_velocity[j * 3];
-        scene->meshes[i].velocity[1] = csv_velocity[j * 3 + 1];
-        scene->meshes[i].velocity[2] = csv_velocity[j * 3 + 2];
+        scene->meshes[i].velocity = csv_velocities[j];
         break;
       }
   }
@@ -460,12 +459,10 @@ int main(int argc, char *argv[]) {
   }
   const char* scene_filepath = argv[1];
   const char* scene_filename = strrchr(scene_filepath, '/');
-  if (scene_filename == NULL)
-    exit(8);
-  else
-    ++scene_filename;
+  if (scene_filename == NULL) exit(8);
+  else ++scene_filename;
 
-  HRT_Scene* scene_ptr;
+  Scene* scene_ptr;
 
   /* read scene */
   /* check if the scene is a hardcoded scene */
@@ -474,30 +471,12 @@ int main(int argc, char *argv[]) {
   else if (!strcmp(scene_filename, scene_simpleReflector_filename))
     scene_ptr = &scene_simpleReflector;
   else {
-    scene_ptr = (HRT_Scene*)malloc(sizeof(HRT_Scene));
+    scene_ptr = (Scene*)malloc(sizeof(Scene));
     readScene(scene_filepath, scene_ptr);
   }
 
-  FILE *fp = fopen("scene.hrt", "wb");
-  if (!fp)
-    PERROR_CLEANUP_EXIT("Error: cannot open file", 8);
+  /* Save the scene as HRT */
+  scene_save(scene_ptr, "scene.hrt");
 
-  /* MAGIC */
-  fwrite("HRT", 1, 3, fp);
-  /* SCENE */
-  /* num_meshes */
-  fwrite(&scene_ptr->num_meshes, sizeof(uint32_t), 1, fp);
-  /* meshes */
-  for (uint32_t i = 0; i != scene_ptr->num_meshes; ++i) {
-    /* MESH */
-    fwrite(&scene_ptr->meshes[i].num_vertices, sizeof(uint32_t), 1, fp);
-    fwrite(scene_ptr->meshes[i].vs, sizeof(float), 3 * scene_ptr->meshes[i].num_vertices, fp);
-    fwrite(&scene_ptr->meshes[i].num_triangles, sizeof(uint32_t), 1, fp);
-    fwrite(scene_ptr->meshes[i].is, sizeof(uint32_t), 3 * scene_ptr->meshes[i].num_triangles, fp);
-    fwrite(&scene_ptr->meshes[i].material_index, sizeof(uint32_t), 1, fp);
-    fwrite(&scene_ptr->meshes[i].velocity, sizeof(float), 3, fp);
-  }
-
-  fclose(fp);
   return 0;
 }

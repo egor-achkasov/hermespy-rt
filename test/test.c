@@ -1,5 +1,7 @@
-#include "compute_paths.h"
-#include "test.h"
+#include "../inc/compute_paths.h" /* for compute_paths */
+#include "../inc/scene.h" /* for Scene, scene_load */
+
+#include "test.h" /* for g_numRx, g_numTx, g_numPaths, g_numBounces */
 
 #include <stdio.h> /* for fprintf */
 #include <stdlib.h> /* for malloc */
@@ -38,8 +40,9 @@ int main(int argc, char **argv)
     .tau = (float*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * sizeof(float)),
     .freq_shift = (float*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * sizeof(float))
   };
+  Scene scene = scene_load(argv[1]);
   compute_paths(
-    argv[1],
+    &scene,
     rx_positions,
     tx_positions,
     rx_velocities,

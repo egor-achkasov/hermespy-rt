@@ -1,27 +1,34 @@
 #ifndef SCENE_H
 #define SCENE_H
 
+#include "common.h" /* for IN */
+#include "vec3.h" /* for Vec3 */
+
 #include <stdint.h> /* for uint32_t */
 
 typedef struct {
   /* Number of vertices */
   uint32_t num_vertices;
-  /* Vertices coordinates. Size [num_vertices * 3] */
-  float *vs;
+  /* Vertices coordinates. Size [num_vertices] */
+  Vec3 *vs;
   /* Number of triangles */
   uint32_t num_triangles;
   /* Triangles indices. Size [num_triangles * 3] */
   uint32_t *is;
   /* Index of the material in g_hrt_materials array defined in scene.h */
   uint32_t material_index;
-  /* Global cartesian velocity vector. Size [3] */
-  float velocity[3];
-} HRT_Mesh;
+  /* Global cartesian velocity vector */
+  Vec3 velocity;
+  /* Normals of the triangles. Size [num_triangles] */
+  /* NOTE: This field is not stored in the HRT file.
+  The loader does not load, allocate or calculate it. */
+  Vec3 *ns;
+} Mesh;
 
 typedef struct {
   uint32_t num_meshes;
-  HRT_Mesh *meshes;
-} HRT_Scene;
+  Mesh *meshes;
+} Scene;
 
 typedef struct {
   /* Number of characters in the name */
@@ -55,6 +62,25 @@ typedef struct {
    * Must be > 0.
    */
   uint8_t s3_alpha;
-} HRT_Material;
+} Material;
+
+/** Save a scene to a HRT file. (See README for details)
+ *
+ * NOTE: This function does not save the normals of the triangles (Mesh.ns field).
+ * 
+ * \param scene pointer to the scene to save
+ * \param filepath path to the HRT file. Will be overwritten if exists.
+ */
+void scene_save(IN Scene* scene, IN const char* filepath);
+
+/** Load a mesh from a HRT file.
+ * 
+ * NOTE: This function does not load, allocate or calculate
+ * the normals of the triangles (Mesh.ns field).
+ * 
+ * \param filepath path to the HRT file
+ * \return the loaded scene
+ */
+Scene scene_load(IN const char *filepath);
 
 #endif /* SCENE_H */

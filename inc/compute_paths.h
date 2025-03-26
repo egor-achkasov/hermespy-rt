@@ -1,6 +1,8 @@
 #ifndef COMPUTE_PATHS_H
 #define COMPUTE_PATHS_H
 
+#include "scene.h" /* for Scene */
+
 #include <stddef.h> /* for size_t */
 #include <stdint.h> /* for uint32_t */
 
@@ -31,7 +33,7 @@ typedef struct {
  * 
  * The output parameters are allocated by the caller (including the fields).
  * 
- * \param scene_filepath path to a scene .hrt file
+ * \param scene pointer to a loaded scene in HRT format (see scene.h)
  * \param rx_pos receiver positions, shape (num_rx, 3)
  * \param tx_pos transmitter positions, shape (num_tx, 3)
  * \param rx_vel receiver velocities, shape (num_rx, 3)
@@ -46,18 +48,18 @@ typedef struct {
  * \param scatter output scatter results. scatter->num_paths = num_bounces * num_paths
 */
 void compute_paths(
-    IN const char *scene_filepath,   /* path to the scene file */
-    IN const float *rx_pos,         /* shape (num_rx, 3) */
-    IN const float *tx_pos,         /* shape (num_tx, 3) */
-    IN const float *rx_vel,         /* shape (num_rx, 3) */
-    IN const float *tx_vel,         /* shape (num_tx, 3) */
-    IN float carrier_frequency,     /* > 0.0 (IN GHz!) */
-    IN size_t num_rx,               /* number of receivers */
-    IN size_t num_tx,               /* number of transmitters */
-    IN size_t num_paths,            /* number of paths */
-    IN size_t num_bounces,          /* number of bounces */
-    OUT PathsInfo *los,             /* output LoS information */
-    OUT PathsInfo *scatter          /* output scatter information */
+    IN Scene *scene,            /* Pointer to a loaded scene */
+    IN const float *rx_pos,     /* shape (num_rx, 3) */
+    IN const float *tx_pos,     /* shape (num_tx, 3) */
+    IN const float *rx_vel,     /* shape (num_rx, 3) */
+    IN const float *tx_vel,     /* shape (num_tx, 3) */
+    IN float carrier_frequency, /* > 0.0 (IN GHz!) */
+    IN size_t num_rx,           /* number of receivers */
+    IN size_t num_tx,           /* number of transmitters */
+    IN size_t num_paths,        /* number of paths */
+    IN size_t num_bounces,      /* number of bounces */
+    OUT PathsInfo *los,         /* output LoS information */
+    OUT PathsInfo *scatter      /* output scatter information */
 );
 
 #endif /* COMPUTE_PATHS_H */
