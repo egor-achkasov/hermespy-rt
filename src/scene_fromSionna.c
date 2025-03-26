@@ -8,7 +8,7 @@
 #include <stdio.h> /* for FILE, fopen, fclose, fseek, fgets, sscanf, printf */
 #include <stdlib.h> /* for malloc */
 #include <stdint.h> /* for uint8_t, uint32_t */
-#include <string.h> /* for strncmp, strrchr, strcmp */
+#include <string.h> /* for strncmp, strrchr, strcmp, snprintf, strcpy, strlen, strncpy, strchr, strstr */
 
 /**
  * Hardcoded scenes
@@ -265,7 +265,7 @@ void readXml(
     PERROR_CLEANUP_EXIT("Error: cannot open the xml file", 8);
 
   fseek(f, 0, SEEK_END);
-  long fsize = ftell(f);
+  size_t fsize = (size_t)ftell(f);
   fseek(f, 0, SEEK_SET);
 
   char* buf = (char*)malloc(fsize + 1);
@@ -274,6 +274,7 @@ void readXml(
   if (fread(buf, 1, fsize, f) != fsize)
     PERROR_CLEANUP_EXIT("Error: cannot read the xml file", 8, buf);
   buf[fsize] = '\0';
+  fclose(f);
 
   /* Count the amount of "<shape" entries */
   char** shape_positions = NULL;
@@ -425,11 +426,16 @@ void readScene(const char* filepath, Scene* scene) {
     PERROR_CLEANUP_EXIT("Error: failed to allocate meshes array", 8);
   for (uint32_t i = 0; i != xml_num_meshes; ++i) {
     /* Get the mesh file path */
-    size_t mesh_filepath_len = scene_dir_len + strlen(xml_mesh_filepaths[i]);
+    size_t mesh_filepath_len = scene_dir_len + strlen(xml_mesh_filepaths[i]) + 1;
     char* mesh_filepath = (char*)malloc(mesh_filepath_len);
-    mesh_filepath[0] = '\0';
-    strncat(mesh_filepath, scene_dir, scene_dir_len);
-    strncat(mesh_filepath + scene_dir_len, xml_mesh_filepaths[i], mesh_filepath_len - scene_dir_len);
+    snprintf(
+      mesh_filepath,
+      mesh_filepath_len,
+      "%.*s%s",
+      (int)scene_dir_len,
+      scene_dir,
+      xml_mesh_filepaths[i]
+    );
     /* Read the mesh */
     scene->meshes[i] = readPly(mesh_filepath);
     free(mesh_filepath);
