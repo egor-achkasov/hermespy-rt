@@ -1,5 +1,6 @@
 #include "../inc/vec3.h" /* for Vec3 */
 #include "../inc/scene.h" /* for Scene, Mesh, scene_load */
+#include "../inc/ray.h" /* for Ray */
 
 #include "../test/test.h" /* for g_numPaths, g_numBounces, g_numTx, g_numRx */
 
@@ -34,7 +35,7 @@ Camera g_cam = {
 };
 uint8_t g_mouseDown = 0;
 
-float* g_rays = NULL;
+Ray* g_rays = NULL;
 uint8_t *g_active = NULL;
 
 Scene g_scene = {0};
@@ -53,7 +54,7 @@ void loadRays(const char* filename) {
   }
   
   uint32_t fileSize = (g_numBounces + 1) * g_numTx * g_numPaths * 2 * 3;
-  g_rays = (float*)malloc(fileSize * sizeof(float));
+  g_rays = (Ray*)malloc(fileSize * sizeof(float));
   if (fread(g_rays, sizeof(float), fileSize, file) != fileSize) {
     printf("Failed to read rays\n");
     exit(8);
@@ -105,57 +106,60 @@ void drawRays() {
   float color = (float)g_bounce_cur / g_numBounces;
   glColor3f(color, 0.0f, 1.0f - color);
   
-  glBegin(GL_LINES);
-  uint32_t idx_base = g_bounce_cur * g_numTx * g_numPaths * 2 * 3;
-  uint32_t active_byte = g_bounce_cur * (g_numTx * g_numPaths / 8 + 1);
   uint8_t active_bit = 1;
   uint32_t num_skipped = 0;
-  for (uint32_t path = 0; path < g_numPaths; ++path, active_bit <<= 1) {
-    uint32_t idx = idx_base + path * 2 * 3;
+  for (uint32_t tx = 0; tx < g_numTx; ++tx) {
+    glBegin(GL_LINES);
+ 
+    uint32_t active_byte = (tx * (g_numBounces + 1) + g_bounce_cur) * (g_numPaths / 8 + 1);
+    uint32_t ray_ind_base = (tx * (g_numBounces + 1) + g_bounce_cur) * g_numPaths;
 
-    if (!active_bit) {
-      active_byte++;
-      active_bit = 1;
+    for (uint32_t path = 0; path < g_numPaths; ++path, active_bit <<= 1) {
+      if (!active_bit) {
+        active_byte++;
+        active_bit = 1;
+      }
+      if (!(g_active[active_byte] & active_bit))
+      {
+        num_skipped++;
+        continue;
+      }
+      
+      uint32_t idx = ray_ind_base + path;
+      GLfloat x = g_rays[idx].o.x;
+      GLfloat y = g_rays[idx].o.y;
+      GLfloat z = g_rays[idx].o.z;
+      /* Origin */
+      glVertex3f(x, y, z);
+      /* Destination */
+      glVertex3f(
+        x + g_rays[idx].d.x,
+        y + g_rays[idx].d.y,
+        z + g_rays[idx].d.z
+      );
     }
-    if (!(g_active[active_byte] & active_bit))
-    {
-      num_skipped++;
-      continue;
+    glEnd();
+    
+    /* Draw points */
+    glPointSize(5.0f);
+    glBegin(GL_POINTS);
+    active_byte = g_bounce_cur * (g_numTx * g_numPaths / 8 + 1);
+    active_bit = 1;
+    for (uint32_t path = 0; path < g_numPaths; ++path) {
+      if (!active_bit) {
+        active_byte++;
+        active_bit = 1;
+      }
+      if (!(g_active[active_byte] & active_bit))
+        continue;
+      uint32_t idx = ray_ind_base + path;
+      glVertex3f(g_rays[idx].o.x, g_rays[idx].o.y, g_rays[idx].o.z);
     }
-    
-    /* Origin */
-    float x1 = g_rays[idx];
-    float y1 = g_rays[idx + 1];
-    float z1 = g_rays[idx + 2];
-    
-    /* Destination */
-    float x2 = x1 + g_rays[idx + 3];
-    float y2 = y1 + g_rays[idx + 4];
-    float z2 = z1 + g_rays[idx + 5];
-    
-    glVertex3f(x1, y1, z1);
-    glVertex3f(x2, y2, z2);
+    glEnd();
   }
-  glEnd();
+  
   printf("\rSkipped %d paths", num_skipped);
   fflush(stdout);
-  
-  /* Draw points */
-  glPointSize(5.0f);
-  glBegin(GL_POINTS);
-  active_byte = g_bounce_cur * (g_numTx * g_numPaths / 8 + 1);
-  active_bit = 1;
-  for (uint32_t path = 0; path < g_numPaths; ++path) {
-    uint32_t idx = idx_base + path * 2 * 3;
-    if (!active_bit) {
-      active_byte++;
-      active_bit = 1;
-    }
-    if (!(g_active[active_byte] & active_bit))
-      continue;
-    glVertex3f(g_rays[idx], g_rays[idx + 1], g_rays[idx + 2]);
-  }
-  glEnd();
 }
 
 /**

@@ -1,6 +1,9 @@
 #include "../inc/compute_paths.h" /* for compute_paths */
 #include "../inc/scene.h" /* for Scene, Mesh, Material */
 #include "../inc/materials.h" /* for g_materials */
+#include "../inc/common.h" /* for IN, OUT, PERROR_CLEANUP_EXIT */
+#include "../inc/vec3.h" /* for Vec3, vec3_sub, vec3_cross, vec3_dot, vec3_normalize */
+#include "../inc/ray.h" /* for Ray */
 
 #include <stddef.h> /* for size_t */
 #include <stdlib.h> /* for exit, malloc, free */
@@ -117,10 +120,6 @@ const float* BINOMIAL_ALPHA_K[20] = {
 
 /* ==== STRUCTS ==== */
 
-typedef struct {
-  Vec3 o, d;
-} Ray;
-
 /* Radio material eta and additional parameters */
 typedef struct {
   /* eta */
@@ -165,17 +164,8 @@ void cdivf(
 
 /* ==== PRECOMPUTED GLOBALS ==== */
 
-/* 4.f * PI * carrier_frequency * 1e9 / SPEED_OF_LIGHT */
-float g_free_space_loss_multiplier;
 /* Materials etas, calucalted for the given carrier_frequency */
 MaterialPrecomputed g_materials_precomputed[NUM_G_MATERIALS];
-
-void precompute_free_space_loss_multiplier(
-  IN float carrier_frequency
-)
-{
-  g_free_space_loss_multiplier = 4.f * PI * carrier_frequency * 1e9 / SPEED_OF_LIGHT;
-}
 
 void precompute_materials(
   IN Scene* scene,
@@ -426,96 +416,75 @@ void scat_coefs(
 /* ==== MAIN FUNCTION ==== */
 
 void compute_paths(
-  IN Scene *scene,            /* Pointer to a loaded scene */
-  IN Vec3 *rx_pos,     /* shape (num_rx, 3) */
-  IN Vec3 *tx_pos,     /* shape (num_tx, 3) */
-  IN Vec3 *rx_vel,     /* shape (num_rx, 3) */
-  IN Vec3 *tx_vel,     /* shape (num_tx, 3) */
-  IN float carrier_frequency, /* > 0.0 (IN GHz!) */
-  IN size_t num_rx,           /* number of receivers */
-  IN size_t num_tx,           /* number of transmitters */
-  IN size_t num_paths,        /* number of paths */
-  IN size_t num_bounces,      /* number of bounces */
-  OUT PathsInfo *los,         /* output LoS information. los->num_paths = 1 */
-  OUT PathsInfo *scatter      /* output scatter information. scatter->num_paths = num_bounces*num_paths */
+  IN Scene *scene,                /* Pointer to a loaded scene */
+  IN Vec3 *rx_pos,                /* shape (num_rx, 3) */
+  IN Vec3 *tx_pos,                /* shape (num_tx, 3) */
+  IN Vec3 *rx_vel,                /* shape (num_rx, 3) */
+  IN Vec3 *tx_vel,                /* shape (num_tx, 3) */
+  IN float carrier_frequency_GHz, /* > 0.0 (IN GHz!) */
+  IN size_t num_rx,               /* number of receivers */
+  IN size_t num_tx,               /* number of transmitters */
+  IN size_t num_paths,            /* number of paths */
+  IN size_t num_bounces,          /* number of bounces */
+  OUT ChannelInfo *chanInfo_los,  /* output LoS channel information */
+  OUT RaysInfo *raysInfo_los,     /* output LoS rays information */
+  OUT ChannelInfo *chanInfo_scat, /* output scatter channel information */
+  OUT RaysInfo *raysInfo_scat     /* output scatter rays information */
 )
 {
   /* Precompute globals */
-  precompute_free_space_loss_multiplier(carrier_frequency);
-  precompute_materials(scene, carrier_frequency);
+  precompute_materials(scene, carrier_frequency_GHz);
   precompute_normals(scene);
 
-  /* Calculate a fibonacci sphere */
-  Vec3 *ray_directions = (Vec3*)malloc(num_paths * sizeof(Vec3));
-  float k, phi, theta;
+  /* Calculate a fibonacci sphere to init rays that leave the transmitters */
+  /* rays shape = (num_tx, num_paths) */
+  Ray *rays = (Ray*)malloc(num_tx * num_paths * sizeof(Ray));
   for (size_t path = 0; path < num_paths; ++path) {
-    k = (float)path + .5f;
-    phi = acos(1.f - 2.f * k / num_paths);
-    theta = PI * (1.f + sqrtf(5.f)) * k;
-    ray_directions[path] = (Vec3){
+    float k = (float)path + .5f;
+    float phi = acos(1.f - 2.f * k / num_paths);
+    float theta = PI * (1.f + sqrtf(5.f)) * k;
+    Vec3 d = (Vec3){
       cos(theta) * sin(phi),
       sin(theta) * sin(phi),
       cos(phi)
     };
-  }
-
-  /* Record the tx directions */
-  /* This is only valid for the fibbonaci sphere */
-  scatter->directions_tx = (float*)memcpy(
-    scatter->directions_tx,
-    ray_directions,
-    num_paths * sizeof(Vec3)
-  );
-  if (scatter->directions_tx == NULL) {
-    fprintf(stderr, "Failed to copy memory to scatter->directions_tx\n");
-    exit(70);
-  }
-
-  /* Create num_path rays for each tx */
-  /* Shape (num_tx, num_paths) */
-  Ray *rays = (Ray*)malloc(num_tx * num_paths * sizeof(Ray));
-  for (size_t tx = 0, off = 0; tx < num_tx; ++tx) {
-    for (size_t path = 0; path < num_paths; ++path, ++off) {
-      rays[off].o = tx_pos[tx];
-      rays[off].d = ray_directions[path];
+    for (size_t tx = 0; tx < num_tx; ++tx) {
+      rays[tx * num_paths + path].o = tx_pos[tx];
+      rays[tx * num_paths + path].d = d;
     }
   }
-  free(ray_directions);
 
-  /* Initialize variables needed for the RT */
-
-  /* Bouncing (reflecting) rays gains and delays */
+  /* Init bouncing rays gains and delays */
   /* shape (num_tx, num_paths) */
-  float *a_te_re_refl = (float*)malloc(num_tx * num_paths * sizeof(float));
-  float *a_te_im_refl = (float*)calloc(num_tx * num_paths, sizeof(float));
-  float *a_tm_re_refl = (float*)malloc(num_tx * num_paths * sizeof(float));
-  float *a_tm_im_refl = (float*)calloc(num_tx * num_paths, sizeof(float));
+  float *a_te_re = (float*)malloc(num_tx * num_paths * sizeof(float));
+  float *a_te_im = (float*)calloc(num_tx * num_paths, sizeof(float));
+  float *a_tm_re = (float*)malloc(num_tx * num_paths * sizeof(float));
+  float *a_tm_im = (float*)calloc(num_tx * num_paths, sizeof(float));
   for (size_t i = 0; i < num_tx * num_paths; ++i)
-    a_te_re_refl[i] = a_tm_re_refl[i] = 1.f;
-  float *tau_t = (float*)calloc(num_tx * num_paths, sizeof(float));
+    a_te_re[i] = a_tm_re[i] = 1.f;
+  float *tau = (float*)calloc(num_tx * num_paths, sizeof(float));
 
   /* Active rays bitmask. 1 if the ray is still traced, 0 if it has left the scene */
   uint8_t *active = (uint8_t*)malloc((num_tx * num_paths / 8 + 1) * sizeof(uint8_t));
   for (size_t i = 0; i < num_tx * num_paths / 8 + 1; ++i)
-    active[i] = 0xff;
+    raysInfo_scat->rays_active[i] = active[i] = 0xff;
   size_t num_active = num_tx * num_paths;
 
   /* Temporary variables */
   float t, r_te_re, r_te_im, r_tm_re, r_tm_im;
-  float a_te_re_new, a_te_im_new, a_tm_re_new, a_tm_im_new;
+  float theta; /* incidence angle */
   float theta_s; /* scattering angle */
-  uint32_t mesh_ind, face_ind, material_index;
-  Ray r;
-  Vec3 *h = (Vec3*)malloc(sizeof(Vec3));
-  Vec3 n;
+  uint32_t mesh_ind, face_ind, material_ind;
+  Ray* r;
 
   /* Friis free space loss multiplier.
   Multiply this by a distance and take the second power to get a free space loss. */
-  float free_space_loss_multiplier = 4.f * PI * carrier_frequency * 1e9 / SPEED_OF_LIGHT;
+  float carrier_frequency_hz = carrier_frequency_GHz * 1e9;
+  float free_space_loss_multiplier = 4.f * PI * carrier_frequency_hz / SPEED_OF_LIGHT;
   float free_space_loss;
 
   /* Doppler frequency shift carrier frequency multiplier */
-  float doppler_shift_multiplier = carrier_frequency * 1e9 / SPEED_OF_LIGHT;
+  float doppler_shift_multiplier = carrier_frequency_hz / SPEED_OF_LIGHT;
 
   /* Initialize the doppler frequency shift using the tx velocities */
   /* The scatter->freq_shift has the shape of (num_rx, num_tx, num_bounces*num_paths) */
@@ -525,16 +494,16 @@ void compute_paths(
     for (size_t path = 0; path != num_paths; ++path) {
       size_t off_rays = tx * num_paths + path;
       size_t off_scat = tx * num_paths * num_bounces + path;
-      scatter->freq_shift[off_scat] = vec3_dot(&tx_vel[tx], &rays[off_rays].d);
-      scatter->freq_shift[off_scat] *= doppler_shift_multiplier;
+      chanInfo_scat->freq_shift[off_scat] = vec3_dot(&tx_vel[tx], &rays[off_rays].d);
+      chanInfo_scat->freq_shift[off_scat] *= doppler_shift_multiplier;
     }
   for (size_t bounce = 1; bounce < num_bounces; ++bounce)
-    if (!memcpy(scatter->freq_shift + num_tx * num_paths * bounce,
-                scatter->freq_shift, num_tx * num_paths * sizeof(float)))
+    if (!memcpy(chanInfo_scat->freq_shift + num_tx * num_paths * bounce,
+                chanInfo_scat->freq_shift, num_tx * num_paths * sizeof(float)))
       exit(70);
   for (size_t rx = 1; rx < num_rx; ++rx)
-    if (!memcpy(scatter->freq_shift + num_tx * num_paths * num_bounces * rx,
-                scatter->freq_shift, num_tx * num_paths * num_bounces * sizeof(float)))
+    if (!memcpy(chanInfo_scat->freq_shift + num_tx * num_paths * num_bounces * rx,
+                chanInfo_scat->freq_shift, num_tx * num_paths * num_bounces * sizeof(float)))
       exit(70);
 
   /***************************************************************************/
@@ -543,65 +512,67 @@ void compute_paths(
 
   /* Consider imaginary parts of the LoS gains to be 0 in any way */
   for (size_t off = 0; off != num_rx * num_tx; ++off)
-    los->a_te_im[off] = los->a_tm_im[off] = 0.f;
+    chanInfo_los->a_te_im[off] = chanInfo_los->a_tm_im[off] = 0.f;
 
   /* Calculate LoS paths directly from tx to rx */
+  /* off = rx * num_tx + tx */
   for (size_t rx = 0, off = 0; rx != num_rx; ++rx)
     for (size_t tx = 0; tx != num_tx; ++tx, ++off) {
       t = -1.f;
       mesh_ind = face_ind = -1;
 
       /* Create a ray from the tx to the rx */
-      r.o = tx_pos[tx];
-      r.d = vec3_sub(&rx_pos[rx], &r.o);
+      r = &raysInfo_los->rays[off];
+      r->o = tx_pos[tx];
+      r->d = vec3_sub(&rx_pos[rx], &r->o);
 
       /* In case the tx and the rx are at the same position */
-      if (vec3_dot(&r.d, &r.d) < __FLT_EPSILON__) {
+      if (vec3_dot(&r->d, &r->d) < __FLT_EPSILON__) {
         /* Assume the direction to be (1, 0, 0) */
-        los->directions_rx[off * 3] = 1.f;
-        los->directions_tx[off * 3] = -1.f;
-        los->directions_rx[off * 3 + 1] = los->directions_tx[off * 3 + 1] = 0.f;
-        los->directions_rx[off * 3 + 2] = los->directions_tx[off * 3 + 2] = 0.f;
+        chanInfo_los->directions_rx[off] = (Vec3){1.f, 0.f, 0.f};
+        chanInfo_los->directions_tx[off] = (Vec3){-1.f, 0.f, 0.f};
         /* Set gains to 1+0j */
-        los->a_te_re[off] = los->a_tm_re[off] = 1.f;
+        chanInfo_los->a_te_re[off] = chanInfo_los->a_tm_re[off] = 1.f;
         /* Set delay to 0 */
-        los->tau[off] = 0.f;
+        chanInfo_los->tau[off] = 0.f;
         /* Set doppler shift to 0. */
-        los->freq_shift[off] = 0.f;
+        chanInfo_los->freq_shift[off] = 0.f;
+        /* Set the active bit to 1 */
+        raysInfo_los->rays_active[off / 8] |= 1 << (off % 8);
         continue;
       }
 
       /* Is there any abstacle between the tx and the rx? */
-      moeller_trumbore(&r, scene, &t, &mesh_ind, &face_ind, &theta);
+      moeller_trumbore(r, scene, &t, &mesh_ind, &face_ind, &theta);
       if (mesh_ind != (uint32_t)-1 && t <= 1.f) {
         /* An obstacle between the tx and the rx has been hit */
-        los->a_te_re[off] = los->a_tm_re[off] = los->tau[off] = 0.f;
+        chanInfo_los->a_te_re[off] = chanInfo_los->a_tm_re[off] = chanInfo_los->tau[off] = 0.f;
+        /* Set the active bit to 0 */
+        raysInfo_los->rays_active[off / 8] &= ~(1 << (off % 8));
         continue;
       }
 
       /* No obstacle has been hit, the path is LoS */
       /* Calculate the distance */
-      t = sqrtf(vec3_dot(&r.d, &r.d));
+      t = sqrtf(vec3_dot(&r->d, &r->d));
       /* Calculate the direction */
-      Vec3 d = {r.d.x / t, r.d.y / t, r.d.z / t};
-      los->directions_tx[off * 3] = d.x;
-      los->directions_tx[off * 3 + 1] = d.y;
-      los->directions_tx[off * 3 + 2] = d.z;
-      los->directions_rx[off * 3] = -d.x;
-      los->directions_rx[off * 3 + 1] = -d.y;
-      los->directions_rx[off * 3 + 2] = -d.z;
+      Vec3 d = {r->d.x / t, r->d.y / t, r->d.z / t};
+      chanInfo_los->directions_tx[off] = d;
+      chanInfo_los->directions_rx[off] = (Vec3){-d.x, -d.y, -d.z};
       /* Calculate the free space loss */
       free_space_loss = free_space_loss_multiplier * t;
       if (free_space_loss > 1.f) {
-        los->a_te_re[off] = 1.f / free_space_loss;
-        los->a_tm_re[off] = 1.f / free_space_loss;
+        chanInfo_los->a_te_re[off] = 1.f / free_space_loss;
+        chanInfo_los->a_tm_re[off] = 1.f / free_space_loss;
       } else
-        los->a_te_re[off] =los-> a_tm_re[off] = 1.f;
+        chanInfo_los->a_te_re[off] =chanInfo_los-> a_tm_re[off] = 1.f;
       /* Calculate the delay */
-      los->tau[off] = t / SPEED_OF_LIGHT;
+      chanInfo_los->tau[off] = t / SPEED_OF_LIGHT;
       /* Calculate the doppler shift */
-      los->freq_shift[off] = vec3_dot(tx_vel, &d) - vec3_dot(rx_vel, &d);
-      los->freq_shift[off] *= carrier_frequency * 1e9 / SPEED_OF_LIGHT;
+      chanInfo_los->freq_shift[off] = vec3_dot(tx_vel, &d) - vec3_dot(rx_vel, &d);
+      chanInfo_los->freq_shift[off] *= carrier_frequency_hz / SPEED_OF_LIGHT;
+      /* Set the active bit to 1 */
+      raysInfo_los->rays_active[off / 8] |= 1 << (off % 8);
     }
 
   /***************************************************************************/
@@ -614,26 +585,14 @@ void compute_paths(
   * - Spawn scattering rays towards the rx
   * - TODO Spawn refraction rays with gains as per eqs. (31c)-(31d) from ITU-R P.2040-3
   */
-  FILE* ray_file = fopen("rays.bin", "wb");
-  if (!ray_file) {
-    fprintf(stderr, "Could not open file rays.bin\n");
-    exit(8);
-  }
-  fwrite(rays, sizeof(Ray), num_tx * num_paths, ray_file);
-
-  FILE* active_file = fopen("active.bin", "wb");
-  if (!active_file) {
-    fprintf(stderr, "Could not open file active.bin\n");
-    exit(8);
-  }
-  fwrite(active, sizeof(uint8_t), num_tx * num_paths / 8 + 1, active_file);
+  raysInfo_scat->rays = (Ray*)memcpy(raysInfo_scat->rays, rays, num_tx * num_paths * sizeof(Ray));
 
   for (size_t bounce = 0; bounce < num_bounces; ++bounce) {
     /* active[active_byte_index] & (1 << active_bit_pos) */
     size_t active_byte_index = 0;
     uint8_t active_bit = 1;
     size_t off_tx_path = 0; /* tx * num_paths + path */
-    for (size_t tx = 0; tx < num_tx; ++tx)
+    for (size_t tx = 0; tx < num_tx; ++tx) {
       for (size_t path = 0; path < num_paths; ++path, ++off_tx_path, active_bit <<= 1) {
 
         /* Check if the ray is active */
@@ -659,8 +618,8 @@ void compute_paths(
           continue;
         }
         /* Calculate the reflection coefficients R_{eTE} and R_{eTM} */
-        material_index = scene->meshes[mesh_ind].material_index;
-        refl_coefs(material_index, theta,
+        material_ind = scene->meshes[mesh_ind].material_index;
+        refl_coefs(material_ind, theta,
                   &r_te_re, &r_te_im,
                   &r_tm_re, &r_tm_im);
         /* Calculate the free space loss */
@@ -673,45 +632,45 @@ void compute_paths(
           r_tm_im /= free_space_loss;
         }
         /* Update the gains as a' = a * refl_coefs */
-        a_te_re_new = a_te_re_refl[off_tx_path] * r_te_re - a_te_im_refl[off_tx_path] * r_te_im;
-        a_te_im_new = a_te_re_refl[off_tx_path] * r_te_im + a_te_im_refl[off_tx_path] * r_te_re;
-        a_tm_re_new = a_tm_re_refl[off_tx_path] * r_tm_re - a_tm_im_refl[off_tx_path] * r_tm_im;
-        a_tm_im_new = a_tm_re_refl[off_tx_path] * r_tm_im + a_tm_im_refl[off_tx_path] * r_tm_re;
-        a_te_re_refl[off_tx_path] = a_te_re_new;
-        a_te_im_refl[off_tx_path] = a_te_im_new;
-        a_tm_re_refl[off_tx_path] = a_tm_re_new;
-        a_tm_im_refl[off_tx_path] = a_tm_im_new;
+        float a_te_re_new = a_te_re[off_tx_path] * r_te_re - a_te_im[off_tx_path] * r_te_im;
+        float a_te_im_new = a_te_re[off_tx_path] * r_te_im + a_te_im[off_tx_path] * r_te_re;
+        float a_tm_re_new = a_tm_re[off_tx_path] * r_tm_re - a_tm_im[off_tx_path] * r_tm_im;
+        float a_tm_im_new = a_tm_re[off_tx_path] * r_tm_im + a_tm_im[off_tx_path] * r_tm_re;
+        a_te_re[off_tx_path] = a_te_re_new;
+        a_te_im[off_tx_path] = a_te_im_new;
+        a_tm_re[off_tx_path] = a_tm_re_new;
+        a_tm_im[off_tx_path] = a_tm_im_new;
         /* Update the delay */
-        tau_t[off_tx_path] += t / SPEED_OF_LIGHT;
+        tau[off_tx_path] += t / SPEED_OF_LIGHT;
 
         /* Move and reflect the ray */
-        r = rays[off_tx_path];
+        r = &rays[off_tx_path];
         /* Advance the ray to the hit point */
-        *h = vec3_scale(&r.d, t);
-        r.o = vec3_add(h, &r.o);
+        Vec3 h = vec3_scale(&r->d, t);
+        r->o = vec3_add(&h, &r->o);
         /* Reflect the ray's direction as d' = d - 2*(d \cdot n)*n */
-        n = scene->meshes[mesh_ind].ns[face_ind];
-        t = vec3_dot(&r.d, &n);
-        *h = vec3_scale(&n, 2.f * t);
-        r.d = vec3_sub(&r.d, h);
+        Vec3 n = scene->meshes[mesh_ind].ns[face_ind];
+        t = vec3_dot(&r->d, &n);
+        h = vec3_scale(&n, 2.f * t);
+        r->d = vec3_sub(&r->d, &h);
         /* Advance the ray origin a bit to avoid intersection with the same triangle */
-        *h = vec3_scale(&r.d, 1e-4f); 
-        r.o = vec3_add(&r.o, h);
+        h = vec3_scale(&r->d, 1e-4f); 
+        r->o = vec3_add(&r->o, &h);
 
         /* Calculate the doppler shift caused by the reflection */
         Vec3* mesh_vel = &scene->meshes[mesh_ind].velocity;
-        Vec3 d_rd = vec3_sub(&r.d, &rays[off_tx_path].d);
-        scatter->freq_shift[off_tx_path] += vec3_dot(&d_rd, mesh_vel) * doppler_shift_multiplier;
+        Vec3 d_rd = vec3_sub(&r->d, &rays[off_tx_path].d);
+        chanInfo_scat->freq_shift[off_tx_path] += vec3_dot(&d_rd, mesh_vel) * doppler_shift_multiplier;
 
         /* Save the reflected ray */
-        rays[off_tx_path] = r;
+        rays[off_tx_path] = *r;
 
         /***********************************************************************/
         /*                          Scatter the rays                           */
         /***********************************************************************/
 
         /* Scatter a path from the hit point towards the rx */
-        Ray r_scat = { .o = r.o };
+        Ray r_scat = { .o = r->o };
         for (size_t rx = 0; rx < num_rx; ++rx) {
           /* [rx, tx, bounce, path] */
           size_t off_scat = ((rx * num_tx + tx) * num_bounces + bounce) * num_paths + path;
@@ -725,67 +684,74 @@ void compute_paths(
           moeller_trumbore(&r_scat, scene, &t, &mesh_ind, &face_ind, &theta);
           if (mesh_ind != (uint32_t)-1 && t <= 1.f) {
             /* An obstacle between the hit point and the rx has been hit */
-            scatter->a_te_re[off_scat] = scatter->a_te_im[off_scat]
-                                       = scatter->a_tm_re[off_scat]
-                                       = scatter->a_tm_im[off_scat]
-                                       = scatter->tau[off_scat]
-                                       = 0.f;
+            chanInfo_scat->a_te_re[off_scat] = chanInfo_scat->a_te_im[off_scat]
+                                             = chanInfo_scat->a_tm_re[off_scat]
+                                             = chanInfo_scat->a_tm_im[off_scat]
+                                             = chanInfo_scat->tau[off_scat]
+                                             = 0.f;
             continue;
           }
           /* No obstacle has been hit */
           /* Calculate the scattering angle */
           theta_s = acosf(vec3_dot(&r_scat.d, &n));
           /* Calculate the scattering coefficients */
-          float a_te_re_new, a_te_im_new, a_tm_re_new, a_tm_im_new;
-          scat_coefs(theta_s, theta, material_index,
+          scat_coefs(theta_s, theta, material_ind,
                      &a_te_re_new, &a_te_im_new, &a_tm_re_new, &a_tm_im_new);
-          scatter->a_te_re[off_scat] = a_te_re_refl[off_tx_path] * a_te_re_new
-                                     - a_te_im_refl[off_tx_path] * a_te_im_new;
-          scatter->a_te_im[off_scat] = a_te_re_refl[off_tx_path] * a_te_im_new
-                                     + a_te_im_refl[off_tx_path] * a_te_re_new;
-          scatter->a_tm_re[off_scat] = a_tm_re_refl[off_tx_path] * a_tm_re_new
-                                     - a_tm_im_refl[off_tx_path] * a_tm_im_new;
-          scatter->a_tm_im[off_scat] = a_tm_re_refl[off_tx_path] * a_tm_im_new
-                                     + a_tm_im_refl[off_tx_path] * a_tm_re_new;
+          chanInfo_scat->a_te_re[off_scat] = a_te_re[off_tx_path] * a_te_re_new
+                                     - a_te_im[off_tx_path] * a_te_im_new;
+          chanInfo_scat->a_te_im[off_scat] = a_te_re[off_tx_path] * a_te_im_new
+                                     + a_te_im[off_tx_path] * a_te_re_new;
+          chanInfo_scat->a_tm_re[off_scat] = a_tm_re[off_tx_path] * a_tm_re_new
+                                     - a_tm_im[off_tx_path] * a_tm_im_new;
+          chanInfo_scat->a_tm_im[off_scat] = a_tm_re[off_tx_path] * a_tm_im_new
+                                     + a_tm_im[off_tx_path] * a_tm_re_new;
           /* Calculate the direction */
-          scatter->directions_rx[off_scat * 3] = -r_scat.d.x;
-          scatter->directions_rx[off_scat * 3 + 1] = -r_scat.d.y;
-          scatter->directions_rx[off_scat * 3 + 2] = -r_scat.d.z;
+          chanInfo_scat->directions_rx[off_scat] = (Vec3){-r_scat.d.x, -r_scat.d.y, -r_scat.d.z};
           /* Calculate the delay */
-          scatter->tau[off_scat] = tau_t[off_tx_path] + d2rx / SPEED_OF_LIGHT;
+          chanInfo_scat->tau[off_scat] = tau[off_tx_path] + d2rx / SPEED_OF_LIGHT;
           /* Calculate the free space loss */
           free_space_loss = free_space_loss_multiplier * d2rx;
           free_space_loss *= free_space_loss;
           if (free_space_loss > 1.f) {
-            scatter->a_te_re[off_scat] /= free_space_loss;
-            scatter->a_te_im[off_scat] /= free_space_loss;
-            scatter->a_tm_re[off_scat] /= free_space_loss;
-            scatter->a_tm_im[off_scat] /= free_space_loss;
+            chanInfo_scat->a_te_re[off_scat] /= free_space_loss;
+            chanInfo_scat->a_te_im[off_scat] /= free_space_loss;
+            chanInfo_scat->a_tm_re[off_scat] /= free_space_loss;
+            chanInfo_scat->a_tm_im[off_scat] /= free_space_loss;
           }
           /* Calculate the doppler shift */
           Vec3 d_rd = vec3_sub(&r_scat.d, &rays[off_tx_path].d);
           float freq_shift = vec3_dot(&d_rd, mesh_vel) * doppler_shift_multiplier;
-          scatter->freq_shift[off_scat] -= freq_shift;
+          chanInfo_scat->freq_shift[off_scat] -= freq_shift;
         }
 
         /***********************************************************************/
         /*                          Refract the rays                           */
         /***********************************************************************/
         /* TODO */
+      }
+
+      /* Copy the rays to the raysInfo_scat */
+      size_t off_scatter_rays = (tx * num_bounces + (bounce + 1)) * num_paths;
+      size_t off_active = (tx * num_bounces + (bounce + 1)) * (num_paths / 8 + 1);
+      memcpy(
+        raysInfo_scat->rays + off_scatter_rays,
+        rays + tx * num_paths,
+        num_paths * sizeof(Ray)
+      );
+      memcpy(
+        raysInfo_scat->rays_active + off_active,
+        active,
+        (num_paths / 8 + 1) * sizeof(uint8_t)
+      );
     }
-    fwrite(rays, sizeof(Ray), num_tx * num_paths, ray_file);
-    fwrite(active, sizeof(uint8_t), num_tx * num_paths / 8 + 1, active_file);
   }
-  fclose(ray_file);
-  fclose(active_file);
 
   /* Free */
-  free(a_te_re_refl);
-  free(a_te_im_refl);
-  free(a_tm_re_refl);
-  free(a_tm_im_refl);
-  free(tau_t);
-  free(h);
+  free(a_te_re);
+  free(a_te_im);
+  free(a_tm_re);
+  free(a_tm_im);
+  free(tau);
   free(active);
   free(rays);
   /* Free the scene */

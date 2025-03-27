@@ -1,5 +1,7 @@
-#include "../inc/compute_paths.h" /* for compute_paths */
+#include "../inc/compute_paths.h" /* for compute_paths, ChannelInfo, RaysInfo */
 #include "../inc/scene.h" /* for Scene, scene_load */
+#include "../inc/vec3.h" /* for Vec3 */
+#include "../inc/ray.h" /* for Ray */
 
 #include "test.h" /* for g_numRx, g_numTx, g_numPaths, g_numBounces */
 
@@ -18,27 +20,37 @@ int main(int argc, char **argv)
   Vec3 rx_velocities[1] = {{0.0, 0.0, 0.0}};
   Vec3 tx_velocities[1] = {{0.0, 0.0, 0.0}};
   float carrier_frequency = 3.0; /* 3 GHz */
-  PathsInfo los = {
-    .num_paths = 1,
-    .directions_rx = (float*)malloc(g_numRx * g_numTx * 3 * sizeof(float)),
-    .directions_tx = (float*)malloc(g_numRx * g_numTx * 3 * sizeof(float)),
+  ChannelInfo chanInfo_los = {
+    .num_rays = 1,
+    .directions_rx = (Vec3*)malloc(g_numRx * g_numTx * sizeof(Vec3)),
+    .directions_tx = (Vec3*)malloc(g_numRx * g_numTx * sizeof(Vec3)),
     .a_te_re = (float*)malloc(g_numRx * g_numTx * sizeof(float)),
     .a_te_im = (float*)malloc(g_numRx * g_numTx * sizeof(float)),
     .a_tm_re = (float*)malloc(g_numRx * g_numTx * sizeof(float)),
     .a_tm_im = (float*)malloc(g_numRx * g_numTx * sizeof(float)),
     .tau = (float*)malloc(g_numRx * g_numTx * sizeof(float)),
-    .freq_shift = (float*)malloc(g_numRx * g_numTx * sizeof(float))
+    .freq_shift = (float*)malloc(g_numRx * g_numTx * sizeof(float)),
   };
-  PathsInfo scatter = {
-    .num_paths = g_numBounces * g_numPaths,
-    .directions_rx = (float*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * 3 * sizeof(float)),
-    .directions_tx = (float*)malloc(g_numPaths * 3 * sizeof(float)),
+  RaysInfo raysInfo_los = {
+    .rays = (Ray*)malloc(g_numRx * g_numTx * sizeof(Ray)),
+    .rays_active = (uint8_t*)malloc(g_numRx * g_numTx * sizeof(uint8_t) / 8 + 1)
+  };
+  ChannelInfo chanInfo_scat = {
+    .num_rays = g_numBounces * g_numPaths,
+    .directions_rx = (Vec3*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * sizeof(Vec3)),
+    .directions_tx = (Vec3*)malloc(g_numPaths * sizeof(Vec3)),
     .a_te_re = (float*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * sizeof(float)),
     .a_te_im = (float*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * sizeof(float)),
     .a_tm_re = (float*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * sizeof(float)),
     .a_tm_im = (float*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * sizeof(float)),
     .tau = (float*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * sizeof(float)),
-    .freq_shift = (float*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * sizeof(float))
+    .freq_shift = (float*)malloc(g_numRx * g_numTx * g_numBounces * g_numPaths * sizeof(float)),
+  };
+  RaysInfo raysInfo_scat = {
+    .num_bounces = g_numBounces + 1,
+    .num_rays = g_numPaths,
+    .rays = (Ray*)malloc(g_numRx * g_numTx * (g_numBounces + 1) * g_numPaths * sizeof(Ray)),
+    .rays_active = (uint8_t*)malloc(g_numRx * g_numTx * (g_numBounces + 1) * (g_numPaths / 8 + 1) * sizeof(uint8_t))
   };
   Scene scene = scene_load(argv[1]);
   compute_paths(
@@ -49,18 +61,32 @@ int main(int argc, char **argv)
     tx_velocities,
     carrier_frequency,
     g_numRx, g_numTx, g_numPaths, g_numBounces,
-    &los, &scatter
+    &chanInfo_los, &raysInfo_los,
+    &chanInfo_scat, &raysInfo_scat
   );
 
   /* Save the results */
 
   FILE *f;
-  #define WRITE_BIN(name, data, size) \
+  #define WRITE_BIN(name, data, dt, size) \
     f = fopen(name, "wb"); \
-    fwrite(data, sizeof(float), size, f); \
+    fwrite(data, sizeof(dt), size, f); \
     fclose(f);
+  
+  WRITE_BIN(
+    "rays.bin",
+    raysInfo_scat.rays,
+    float,
+    g_numRx * g_numTx * (g_numBounces + 1) * g_numPaths * 6
+  );
+  WRITE_BIN(
+    "active.bin",
+    raysInfo_scat.rays_active,
+    uint8_t,
+    g_numRx * g_numTx * (g_numBounces + 1) * (g_numPaths / 8 + 1)
+  );
 
   /* Use this macro to write what you would like to inspect to a binary file */
   /* Example: */
-  /* WRITE_BIN("los_directions_rx.bin", los.directions_rx, g_numRx * g_numTx * 3); */
+  /* WRITE_BIN("los_directions_rx.bin", los.directions_rx, float, g_numRx * g_numTx * 3); */
 }

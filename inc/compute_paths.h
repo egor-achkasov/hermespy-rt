@@ -2,25 +2,32 @@
 #define COMPUTE_PATHS_H
 
 #include "scene.h" /* for Scene */
+#include "vec3.h" /* for Vec3 */
+#include "ray.h" /* for Ray */
+#include "common.h" /* for IN, OUT */
 
 #include <stddef.h> /* for size_t */
 #include <stdint.h> /* for uint32_t */
 
-#define IN
-#define OUT
-
-/** Raytracing information returned by compute_paths for each path type (LoS, scatter) */
+/** Raytracing channel information returned by compute_paths for each path type (LoS, scatter) */
 typedef struct {
-    uint32_t num_paths;
-    float *directions_rx; /* shape (num_rx, num_tx, num_paths, 3) */
-    float *directions_tx; /* shape (num_rx, num_tx, num_paths, 3) */
-    float *a_te_re; /* shape (num_rx, num_tx, num_paths) */
-    float *a_te_im; /* shape (num_rx, num_tx, num_paths) */
-    float *a_tm_re; /* shape (num_rx, num_tx, num_paths) */
-    float *a_tm_im; /* shape (num_rx, num_tx, num_paths) */
-    float *tau; /* shape (num_rx, num_tx, num_paths) */
-    float *freq_shift; /* Hz, shape (num_rx, num_tx, num_paths) */
-} PathsInfo;
+    uint32_t num_rays; /* number of rays for each rx-tx pair */
+    Vec3 *directions_rx; /* shape (num_rx, num_tx, num_rays) */
+    Vec3 *directions_tx; /* shape (num_tx, num_rays) */
+    float *a_te_re; /* shape (num_rx, num_tx, num_rays) */
+    float *a_te_im; /* shape (num_rx, num_tx, num_rays) */
+    float *a_tm_re; /* shape (num_rx, num_tx, num_rays) */
+    float *a_tm_im; /* shape (num_rx, num_tx, num_rays) */
+    float *tau; /* shape (num_rx, num_tx, num_rays) */
+    float *freq_shift; /* Hz, shape (num_rx, num_tx, num_rays) */
+} ChannelInfo;
+
+/** Raytracing rays information returned by compute_paths */
+typedef struct {
+    uint32_t num_bounces, num_rays;
+    Ray *rays; /* shape (num_tx, num_bounces, num_paths) */
+    uint8_t *rays_active; /* bitmask, shape (num_tx, num_bounces, num_paths / 8 + 1) */
+} RaysInfo;
 
 /** Compute gains and delays between tx and rx in a 3D scene.
  * 
@@ -44,22 +51,26 @@ typedef struct {
  * \param num_paths number of paths to compute. Must be > 0
  * \param num_bounces number of bounces to compute. Must be > 0
  * 
- * \param los output Line-of-Sight results. los->num_paths = 1
- * \param scatter output scatter results. scatter->num_paths = num_bounces * num_paths
+ * \param chanInfo_los output Line-of-Sight channel information. .num_rays = 1
+ * \param raysInfo_los output Line-of-Sight rays information. .num_bounces = .num_rays = 1
+ * \param chanInfo_scat output scatter channel information. .num_rays = num_rays
+ * \param raysInfo_scat output scatter rays information. .num_bounces = num_bounces + 1, .num_rays = num_rays
 */
 void compute_paths(
-    IN Scene *scene,            /* Pointer to a loaded scene */
-    IN Vec3 *rx_pos,            /* shape (num_rx, 3) */
-    IN Vec3 *tx_pos,            /* shape (num_tx, 3) */
-    IN Vec3 *rx_vel,            /* shape (num_rx, 3) */
-    IN Vec3 *tx_vel,            /* shape (num_tx, 3) */
-    IN float carrier_frequency, /* > 0.0 (IN GHz!) */
-    IN size_t num_rx,           /* number of receivers */
-    IN size_t num_tx,           /* number of transmitters */
-    IN size_t num_paths,        /* number of paths */
-    IN size_t num_bounces,      /* number of bounces */
-    OUT PathsInfo *los,         /* output LoS information */
-    OUT PathsInfo *scatter      /* output scatter information */
+    IN Scene *scene,                /* Pointer to a loaded scene */
+    IN Vec3 *rx_pos,                /* shape (num_rx, 3) */
+    IN Vec3 *tx_pos,                /* shape (num_tx, 3) */
+    IN Vec3 *rx_vel,                /* shape (num_rx, 3) */
+    IN Vec3 *tx_vel,                /* shape (num_tx, 3) */
+    IN float carrier_frequency_GHz, /* > 0.0 (IN GHz!) */
+    IN size_t num_rx,               /* number of receivers */
+    IN size_t num_tx,               /* number of transmitters */
+    IN size_t num_rays,             /* number of rays */
+    IN size_t num_bounces,          /* number of bounces */
+    OUT ChannelInfo *chanInfo_los,  /* output LoS channel information */
+    OUT RaysInfo *raysInfo_los,     /* output LoS rays information */
+    OUT ChannelInfo *chanInfo_scat, /* output scatter channel information */
+    OUT RaysInfo *raysInfo_scat     /* output scatter rays information */
 );
 
 #endif /* COMPUTE_PATHS_H */
