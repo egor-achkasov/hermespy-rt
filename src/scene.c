@@ -11,7 +11,8 @@ void scene_save(
 {
   FILE *fp = fopen(filepath, "wb");
   if (fp == NULL) {
-    PERROR_CLEANUP_EXIT("Error: cannot open file", 8);
+    perror("Error: cannot open file");
+    exit(8);
   }
 
   /* MAGIC */
@@ -39,7 +40,8 @@ Scene scene_load(IN const char *filepath)
   /* Open the HRT file */
   FILE *f = fopen(filepath, "rb");
   if (f == NULL) {
-    PERROR_CLEANUP_EXIT("Could not open scene file", 8);
+    perror("Error: cannot open file");
+    exit(8);
   }
 
   /* Parse the file */
@@ -51,10 +53,14 @@ Scene scene_load(IN const char *filepath)
   Scene scene;
   /* num_meshes */
   if (fread(&scene.num_meshes, sizeof(uint32_t), 1, f) != 1) exit(8);
-  if (scene.num_meshes == 0)
-    PERROR_CLEANUP_EXIT("Scene has no meshes", 8);
-  if (scene.num_meshes > 1000)
-    PERROR_CLEANUP_EXIT("Scene has too many meshes", 8);
+  if (scene.num_meshes == 0) {
+    perror("Scene has no meshes");
+    exit(8);
+  }
+  if (scene.num_meshes > 1000) {
+    perror("Scene has too many meshes");
+    exit(8);
+  }
   /* meshes */
   scene.meshes = (Mesh*)malloc(scene.num_meshes * sizeof(Mesh));
   for (uint32_t i = 0; i != scene.num_meshes; ++i) {
