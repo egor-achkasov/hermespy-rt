@@ -1,8 +1,7 @@
+#include "../inc/viz.h" /* for vizrays */
 #include "../inc/vec3.h" /* for Vec3 */
 #include "../inc/scene.h" /* for Scene, Mesh, scene_load */
 #include "../inc/ray.h" /* for Ray */
-
-#include "../test/test.h" /* for g_numPaths, g_numBounces, g_numTx, g_numRx */
 
 #include <GL/glut.h>
 #include <stdio.h>
@@ -37,44 +36,13 @@ uint8_t g_mouseDown = 0;
 
 Ray* g_rays = NULL;
 uint8_t *g_active = NULL;
+Scene* g_scene = NULL;
 
-Scene g_scene = {0};
+uint32_t g_numTx = 0;
+uint32_t g_numPaths = 0;
+uint32_t g_numBounces = 0;
 
 uint32_t g_bounce_cur = 0;
-
-/**
- * Loading functions
- */
-
-void loadRays(const char* filename) {
-  FILE* file = fopen(filename, "rb");
-  if (!file) {
-    printf("Failed to open file\n");
-    exit(8);
-  }
-  
-  uint32_t fileSize = (g_numBounces + 1) * g_numTx * g_numPaths * 2 * 3;
-  g_rays = (Ray*)malloc(fileSize * sizeof(float));
-  if (fread(g_rays, sizeof(float), fileSize, file) != fileSize) {
-    printf("Failed to read rays\n");
-    exit(8);
-  }
-  fclose(file);
-
-  /* active.bin */
-  file = fopen("active.bin", "rb");
-  if (!file) {
-    printf("Failed to open file\n");
-    exit(8);
-  }
-  uint32_t activeSize = (g_numBounces + 1) * (g_numTx * g_numPaths / 8 + 1);
-  g_active = (uint8_t*)malloc(activeSize * sizeof(uint8_t));
-  if (fread(g_active, sizeof(uint8_t), activeSize, file) != activeSize) {
-    printf("Failed to read active\n");
-    exit(8);
-  }
-  fclose(file);
-}
 
 /**
  * Draw functions
@@ -82,9 +50,9 @@ void loadRays(const char* filename) {
 
 void drawScene() {
   glBegin(GL_TRIANGLES);
-  for (uint32_t i = 0; i < g_scene.num_meshes; i++) {
-    Mesh* mesh = &g_scene.meshes[i];
-    float mesh_color = (float)i / g_scene.num_meshes;
+  for (uint32_t i = 0; i < g_scene->num_meshes; i++) {
+    Mesh* mesh = &g_scene->meshes[i];
+    float mesh_color = (float)i / g_scene->num_meshes;
     glColor3f(mesh_color, 1.f - mesh_color, 0.f);
 
     for (uint32_t j = 0; j < mesh->num_triangles; j++) {
@@ -185,7 +153,7 @@ void display() {
       0.0f, 1.0f, 0.0f
   );
 
-  drawScene();
+  if (g_scene) drawScene();
   drawRays();
   
   glutSwapBuffers();
@@ -305,19 +273,26 @@ void mouseMotion(int x, int y) {
 }
 
 /**
- * Main
+ * vizrays
  */
 
-int main(int argc, char** argv) {
-  const char* rays_filename = "rays.bin";
-  
-  /* Load ray data */
-  loadRays(rays_filename);
-  if (argc > 1)
-    g_scene = scene_load(argv[1]);
+void vizrays(
+  IN RaysInfo *raysInfo,
+  IN Scene *scene,
+  IN uint32_t numTx
+)
+{
+  g_rays = raysInfo->rays;
+  g_active = raysInfo->rays_active;
+  g_scene = scene;
+  g_numTx = numTx;
+  g_numPaths = raysInfo->num_rays;
+  g_numBounces = raysInfo->num_bounces;
   
   /* Initialize GLUT */
-  glutInit(&argc, argv);
+  int fake_argc = 1;
+  char *fake_argv[] = {"vizrays"};
+  glutInit(&fake_argc, fake_argv);
   glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
   glutInitWindowSize(800, 600);
   glutCreateWindow("Ray Visualization");
@@ -335,6 +310,4 @@ int main(int argc, char** argv) {
   
   updateCamera();
   glutMainLoop();
-  
-  return 0;
 }
