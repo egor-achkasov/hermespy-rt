@@ -427,10 +427,10 @@ void scat_coefs(
 
 void compute_paths(
   IN Scene *scene,            /* Pointer to a loaded scene */
-  IN const float *rx_pos,     /* shape (num_rx, 3) */
-  IN const float *tx_pos,     /* shape (num_tx, 3) */
-  IN const float *rx_vel,     /* shape (num_rx, 3) */
-  IN const float *tx_vel,     /* shape (num_tx, 3) */
+  IN Vec3 *rx_pos,     /* shape (num_rx, 3) */
+  IN Vec3 *tx_pos,     /* shape (num_tx, 3) */
+  IN Vec3 *rx_vel,     /* shape (num_rx, 3) */
+  IN Vec3 *tx_vel,     /* shape (num_tx, 3) */
   IN float carrier_frequency, /* > 0.0 (IN GHz!) */
   IN size_t num_rx,           /* number of receivers */
   IN size_t num_tx,           /* number of transmitters */
@@ -471,18 +471,12 @@ void compute_paths(
     exit(70);
   }
 
-  /* Cast the positions and velocities to Vec3 */
-  Vec3 *rx_pos_v = (Vec3*)rx_pos;
-  Vec3 *tx_pos_v = (Vec3*)tx_pos;
-  Vec3 *rx_vel_v = (Vec3*)rx_vel;
-  Vec3 *tx_vel_v = (Vec3*)tx_vel;
-
   /* Create num_path rays for each tx */
   /* Shape (num_tx, num_paths) */
   Ray *rays = (Ray*)malloc(num_tx * num_paths * sizeof(Ray));
   for (size_t tx = 0, off = 0; tx < num_tx; ++tx) {
     for (size_t path = 0; path < num_paths; ++path, ++off) {
-      rays[off].o = tx_pos_v[tx];
+      rays[off].o = tx_pos[tx];
       rays[off].d = ray_directions[path];
     }
   }
@@ -531,7 +525,7 @@ void compute_paths(
     for (size_t path = 0; path != num_paths; ++path) {
       size_t off_rays = tx * num_paths + path;
       size_t off_scat = tx * num_paths * num_bounces + path;
-      scatter->freq_shift[off_scat] = vec3_dot(&tx_vel_v[tx], &rays[off_rays].d);
+      scatter->freq_shift[off_scat] = vec3_dot(&tx_vel[tx], &rays[off_rays].d);
       scatter->freq_shift[off_scat] *= doppler_shift_multiplier;
     }
   for (size_t bounce = 1; bounce < num_bounces; ++bounce)
@@ -558,8 +552,8 @@ void compute_paths(
       mesh_ind = face_ind = -1;
 
       /* Create a ray from the tx to the rx */
-      r.o = tx_pos_v[tx];
-      r.d = vec3_sub(&rx_pos_v[rx], &r.o);
+      r.o = tx_pos[tx];
+      r.d = vec3_sub(&rx_pos[rx], &r.o);
 
       /* In case the tx and the rx are at the same position */
       if (vec3_dot(&r.d, &r.d) < __FLT_EPSILON__) {
@@ -606,7 +600,7 @@ void compute_paths(
       /* Calculate the delay */
       los->tau[off] = t / SPEED_OF_LIGHT;
       /* Calculate the doppler shift */
-      los->freq_shift[off] = vec3_dot(tx_vel_v, &d) - vec3_dot(rx_vel_v, &d);
+      los->freq_shift[off] = vec3_dot(tx_vel, &d) - vec3_dot(rx_vel, &d);
       los->freq_shift[off] *= carrier_frequency * 1e9 / SPEED_OF_LIGHT;
     }
 
@@ -722,7 +716,7 @@ void compute_paths(
           /* [rx, tx, bounce, path] */
           size_t off_scat = ((rx * num_tx + tx) * num_bounces + bounce) * num_paths + path;
           /* Create a ray from the hit point to the rx */
-          r_scat.d = vec3_sub(&rx_pos_v[rx], &r_scat.o);
+          r_scat.d = vec3_sub(&rx_pos[rx], &r_scat.o);
           float d2rx = sqrtf(vec3_dot(&r_scat.d, &r_scat.d));
           r_scat.d = vec3_normalize(&r_scat.d);
           /* Check if the ray has a LoS of the rx */

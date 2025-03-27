@@ -49,10 +49,10 @@ typedef struct {
 */
 void compute_paths(
     IN Scene *scene,            /* Pointer to a loaded scene */
-    IN const float *rx_pos,     /* shape (num_rx, 3) */
-    IN const float *tx_pos,     /* shape (num_tx, 3) */
-    IN const float *rx_vel,     /* shape (num_rx, 3) */
-    IN const float *tx_vel,     /* shape (num_tx, 3) */
+    IN Vec3 *rx_pos,            /* shape (num_rx, 3) */
+    IN Vec3 *tx_pos,            /* shape (num_tx, 3) */
+    IN Vec3 *rx_vel,            /* shape (num_rx, 3) */
+    IN Vec3 *tx_vel,            /* shape (num_tx, 3) */
     IN float carrier_frequency, /* > 0.0 (IN GHz!) */
     IN size_t num_rx,           /* number of receivers */
     IN size_t num_tx,           /* number of transmitters */

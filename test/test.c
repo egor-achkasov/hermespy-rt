@@ -13,10 +13,10 @@ int main(int argc, char **argv)
     return 1;
   }
 
-  float rx_positions[3] = {0.0, 0.0, .5};
-  float tx_positions[3] = {0.0, 0.0, .5};
-  float rx_velocities[3] = {0.0, 0.0, 0.0};
-  float tx_velocities[3] = {0.0, 0.0, 0.0};
+  Vec3 rx_positions[1] = {{0.0, 0.0, .5}};
+  Vec3 tx_positions[1] = {{0.0, 0.0, .5}};
+  Vec3 rx_velocities[1] = {{0.0, 0.0, 0.0}};
+  Vec3 tx_velocities[1] = {{0.0, 0.0, 0.0}};
   float carrier_frequency = 3.0; /* 3 GHz */
   PathsInfo los = {
     .num_paths = 1,
