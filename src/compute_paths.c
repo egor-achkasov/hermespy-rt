@@ -16,6 +16,10 @@
 
 #define PI 3.14159265358979323846f /* pi */
 #define SPEED_OF_LIGHT 299792458.0f /* m/s */
+#ifndef __FLT_EPSILON__
+  #include <float.h>  /* for FLT_EPSILON */
+  #define __FLT_EPSILON__ FLT_EPSILON
+#endif
 
 /* (2w, w) binomial coefficients for w = 0, 1, ..., 19 */
 const float BINOMIAL_2W_W[20] = {

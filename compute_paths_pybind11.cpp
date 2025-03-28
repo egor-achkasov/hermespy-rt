@@ -8,6 +8,7 @@
 #ifdef _WIN32
 extern "C" {
     #include "compute_paths.h"
+    #include "scene.h"
 }
 #else
 #include "compute_paths.h"
@@ -124,13 +125,16 @@ compute_paths_wrapper(
         .freq_shift = new float[num_rx * num_tx * num_bounces * num_paths]
     };
 
+    // Load the scene mesh
+    Scene scene = scene_load(mesh_filepath.c_str());
+
     // Call the C function
     compute_paths(
-        mesh_filepath.c_str(),
-        (const float*)rx_pos_info.ptr,  // Rx positions
-        (const float*)tx_pos_info.ptr,  // Tx positions
-        (const float*)rx_vel_info.ptr,  // Rx velocities
-        (const float*)tx_vel_info.ptr,  // Tx velocities
+        &scene,
+        (Vec3*)rx_pos_info.ptr,  // Rx positions
+        (Vec3*)tx_pos_info.ptr,  // Tx positions
+        (Vec3*)rx_vel_info.ptr,  // Rx velocities
+        (Vec3*)tx_vel_info.ptr,  // Tx velocities
         carrier_frequency,  // Carrier frequency in GHz
         (size_t)num_rx,
         (size_t)num_tx,
@@ -147,7 +151,7 @@ compute_paths_wrapper(
     );
 }
 
-PYBIND11_MODULE(rt, m) {
+PYBIND11_MODULE(binding, m) {
     py::class_<PathsInfoPython>(m, "PathsInfo")
         .def_readonly("num_paths", &PathsInfoPython::num_paths)
         .def_readonly("directions_rx", &PathsInfoPython::directions_rx)

@@ -12,14 +12,15 @@
     size_t cnt = sizeof(ptrs) / sizeof(ptrs[0]); \
     for (size_t i = 0; i < cnt; i++) \
       free(ptrs[i]);          \
-  } while (0)
+  } while (0)                  
 
 /* Variadic arguments after rc are the pointers to free */
+
 #define PERROR_CLEANUP_EXIT(msg, rc, ...) \
   do {                            \
     perror(msg);                \
     FREE_POINTERS(__VA_ARGS__); \
     exit(rc);                    \
-  } while (0)
+  } while (0)                  
 
-#endif
+#endif /* COMMON_H */
