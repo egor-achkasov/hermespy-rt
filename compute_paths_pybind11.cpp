@@ -151,7 +151,7 @@ compute_paths_wrapper(
     );
 }
 
-PYBIND11_MODULE(rt, m) {
+PYBIND11_MODULE(binding, m) {
     py::class_<PathsInfoPython>(m, "PathsInfo")
         .def_readonly("num_paths", &PathsInfoPython::num_paths)
         .def_readonly("directions_rx", &PathsInfoPython::directions_rx)
