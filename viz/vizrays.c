@@ -1,4 +1,4 @@
-#include "../inc/viz.h" /* for vizrays */
+#include "viz.h" /* for vizrays */
 #include "../inc/vec3.h" /* for Vec3 */
 #include "../inc/scene.h" /* for Scene, Mesh, scene_load */
 #include "../inc/ray.h" /* for Ray */

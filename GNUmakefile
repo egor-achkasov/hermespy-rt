@@ -3,6 +3,7 @@ CFLAGS := -Wall -Wextra -Wno-builtin-declaration-mismatch
 LDFLAGS := -lm
 
 SRC := src/materials.c src/scene.c src/compute_paths.c test/test.c viz/vizrays.c
+
 SCENE_FROMSIONNA_SRC := src/scene.c src/materials.c src/scene_fromSionna.c
 
 TARGET := test.elf

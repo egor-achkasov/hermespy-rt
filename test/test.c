@@ -2,7 +2,7 @@
 #include "../inc/scene.h" /* for Scene, scene_load */
 #include "../inc/vec3.h" /* for Vec3 */
 #include "../inc/ray.h" /* for Ray */
-#include "../inc/viz.h" /* for vizrays */
+#include "../viz/viz.h" /* for vizrays */
 
 #include <stdio.h> /* for fprintf */
 #include <stdlib.h> /* for malloc */

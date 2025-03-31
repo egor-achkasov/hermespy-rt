@@ -7,9 +7,9 @@ add -lGL -lGLU -lglut to compile
 #ifndef VIZ_H
 #define VIZ_H
 
-#include "scene.h" /* for Scene */
-#include "compute_paths.h" /* for RaysInfo */
-#include "common.h" /* for IN */
+#include "../inc/scene.h" /* for Scene */
+#include "../inc/compute_paths.h" /* for RaysInfo */
+#include "../inc/common.h" /* for IN */
 
 #include <stdint.h> /* for uint32_t */
 
