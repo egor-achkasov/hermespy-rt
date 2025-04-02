@@ -1,8 +1,11 @@
 import numpy as np
-from rt import compute_paths
+
+import sys, os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import rt
 
 # Define inputs
-mesh_filepath = __file__[:__file__.rfind('/') + 1] + 'scenes/simple_reflector.hrt'
+mesh_filepath = __file__[:__file__.rfind('/') + 1] + '../scenes/simple_reflector.hrt'
 rx_positions = np.array([[0., 0., .15]], dtype=np.float64)
 tx_positions = np.array([[0., 0., .151]], dtype=np.float64)
 rx_velocities = np.array([[0., 0., 0.]], dtype=np.float64)
@@ -14,7 +17,7 @@ num_paths = 10000
 num_bounces = 3
 
 # Call compute_paths
-los, scatter = compute_paths(
+los, scatter = rt.compute_paths(
     mesh_filepath,
     rx_positions,
     tx_positions,

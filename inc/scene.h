@@ -5,6 +5,7 @@
 #include "vec3.h" /* for Vec3 */
 
 #include <stdint.h> /* for uint32_t */
+#include <stdlib.h> /* for free */
 
 typedef struct {
   /* Number of vertices */
@@ -63,6 +64,26 @@ typedef struct {
    */
   uint8_t s3_alpha;
 } Material;
+
+/** Free the memory allocated for a mesh fields.
+ * 
+ * \param mesh pointer to the mesh to free
+ */
+static inline void free_mesh(Mesh* mesh) {
+  free(mesh->vs);
+  free(mesh->is);
+  free(mesh->ns);
+}
+/** Deep free the scene. Frees all the meshes.
+ * 
+ * \param scene pointer to the scene to free
+ */
+static inline void free_scene(Scene* scene) {
+  for (uint32_t i = 0; i < scene->num_meshes; i++) {
+    free_mesh(&scene->meshes[i]);
+  }
+  free(scene->meshes);
+}
 
 /** Save a scene to a HRT file. (See README for details)
  *
