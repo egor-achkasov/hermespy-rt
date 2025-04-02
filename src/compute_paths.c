@@ -662,9 +662,6 @@ void compute_paths(
         Vec3 d_rd = vec3_sub(&r->d, &rays[off_tx_path].d);
         chanInfo_scat->freq_shift[off_tx_path] += vec3_dot(&d_rd, mesh_vel) * doppler_shift_multiplier;
 
-        /* Save the reflected ray */
-        rays[off_tx_path] = *r;
-
         /***********************************************************************/
         /*                          Scatter the rays                           */
         /***********************************************************************/
