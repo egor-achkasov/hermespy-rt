@@ -10,7 +10,7 @@ void scene_save(
 )
 {
   FILE *fp = fopen(filepath, "wb");
-  if (!fp)
+  if (fp == NULL)
     PERROR_CLEANUP_EXIT("Error: cannot open file", 8);
 
   /* MAGIC */
@@ -37,7 +37,7 @@ Scene scene_load(IN const char *filepath)
 {
   /* Open the HRT file */
   FILE *f = fopen(filepath, "rb");
-  if (!f)
+  if (f == NULL)
     PERROR_CLEANUP_EXIT("Could not open scene file", 8);
 
   /* Parse the file */

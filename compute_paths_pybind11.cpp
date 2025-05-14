@@ -185,8 +185,8 @@ compute_paths_wrapper(
     );
 }
 
-PYBIND11_MODULE(rt, m) {
-    py::class_<ChannelInfoPython>(m, "PathsInfo")
+PYBIND11_MODULE(hermespy_rt, m) {
+    py::class_<ChannelInfoPython>(m, "ChannelInfo")
         .def_readonly("num_paths", &ChannelInfoPython::num_paths)
         .def_readonly("directions_rx", &ChannelInfoPython::directions_rx)
         .def_readonly("directions_tx", &ChannelInfoPython::directions_tx)

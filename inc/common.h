@@ -8,10 +8,12 @@
 
 #define FREE_POINTERS(...) \
   do {                            \
+    if (sizeof((int[]){__VA_ARGS__}) > 0) { \
     void *ptrs[] = {__VA_ARGS__};\
     size_t cnt = sizeof(ptrs) / sizeof(ptrs[0]); \
     for (size_t i = 0; i < cnt; i++) \
       free(ptrs[i]);          \
+    }                          \
   } while (0)
 
 /* Variadic arguments after rc are the pointers to free */
@@ -22,4 +24,4 @@
     exit(rc);                    \
   } while (0)
 
-#endif
+#endif /* COMMON_H */

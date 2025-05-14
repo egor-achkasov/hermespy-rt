@@ -2,7 +2,7 @@ import numpy as np
 
 import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-import rt
+import hermespy_rt as rt
 
 # Define inputs
 mesh_filepath = __file__[:__file__.rfind('/') + 1] + '../scenes/simple_reflector.hrt'

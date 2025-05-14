@@ -11,6 +11,7 @@
 #include <stdio.h>  /* for fopen, FILE, fclose */
 #include <math.h>   /* for sin, cos, sqrt */
 #include <stdint.h> /* for int32_t, uint8_t */
+#include <float.h> /* for __FLT_EPSILON__ */
 
 /* ==== CONSTANTS ==== */
 
