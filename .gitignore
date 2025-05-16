@@ -1,6 +1,7 @@
 *.elf
 *.hrt
-scenes
+scenes/*
+!scenes/*.hrt
 env
 .vscode
 build
